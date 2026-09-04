@@ -55,10 +55,7 @@ The SWF import machinery in [`src/swfhelper/`](src/swfhelper) is adapted from
 by **JerryYOJ**, which is GPL-3.0; that is why this project is GPL-3.0 as well. Those files
 keep their attribution headers.
 
-JerryYOJ was asked directly and granted permission for the reuse on 2026-09-04
-("yep you can use that code, no worries"), which also settles the asset-use clause on the
-DIII Nexus page. The GPL-3.0 terms are unchanged by that: this mod stays GPL-3.0 and its
-source is published alongside the release.
+JerryYOJ has given his permission for this reuse.
 
 ## Credits
 
