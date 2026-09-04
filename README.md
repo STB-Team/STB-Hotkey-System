@@ -35,8 +35,10 @@ cmake --build build --config Release
 Dependencies come from vcpkg (`vcpkg.json`): CommonLibSSE-NG, spdlog, nlohmann_json, xbyak.
 `COPY_BUILD=ON` copies the DLL/PDB to `STB_WIDGETS_DEPLOY_DIR` after a successful build.
 
-The keycap graphic is a separate SWF — see [`flash/README.md`](flash/README.md) for how it
-is built and adapted to different UI overhauls.
+The keycap graphic is a separate SWF, not part of the DLL. The default set is built from
+SkyUI's button art; swapping the file restyles every keycap with no rebuild. See
+[`flash/README.md`](flash/README.md) for the frame-layout contract and a step-by-step guide
+to adapting it to another UI overhaul.
 
 ## Configuration
 
@@ -56,10 +58,12 @@ keep their attribution headers.
 ## Credits
 
 - **JerryYOJ** — Dynamic Inventory Icon Injector, the runtime SWF symbol injection.
+- **SkyUI Team** — the default keycap art is built from SkyUI's `buttonart.swf`.
 - The SKSE team and the CommonLibSSE-NG contributors.
 
 ## Not redistributed here
 
-UI-overhaul SWFs (SkyUI, Untarnished, …) and anything extracted from them belong to their
-authors and are gitignored, as is reverse-engineering output. Build the keycaps SWF locally
-from the UI mod you actually run.
+UI-overhaul SWFs and anything extracted from them belong to their authors, so no `.swf` is
+committed — only the recipe to rebuild one. Reverse-engineering output is likewise kept out.
+Build the keycaps SWF locally from the UI mod you actually have installed; see
+[`flash/README.md`](flash/README.md), which also covers the per-mod permission situation.

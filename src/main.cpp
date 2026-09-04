@@ -67,9 +67,23 @@ extern "C" DLLEXPORT constinit auto SKSEPlugin_Version = []() {
 	v.PluginVersion(1);
 	v.PluginName("STB_HotkeySystem");
 	v.AuthorName("STB");
+
+	// Every game address goes through the Address Library (REL::RelocationID + the
+	// VTABLE_/Offset:: constants), so we are not tied to one runtime build.
 	v.UsesAddressLibrary(true);
-	v.CompatibleVersions({ SKSE::RUNTIME_SSE_LATEST});
-	v.HasNoStructUse(true);
+
+	// Struct layouts changed at 1.6.629; CommonLibSSE-NG resolves the per-runtime layout
+	// for us, so declare the modern one. (Drops support for AE older than 1.6.629, which
+	// nobody runs; SE 1.5.97 is unaffected -- it loads through SKSEPlugin_Query above.)
+	v.UsesStructsPost629(true);
+
+	// CompatibleVersions is deliberately NOT set: a non-empty list is a strict whitelist.
+	// It used to hold RUNTIME_SSE_LATEST, which this CommonLib defines as 1.6.678, so AE
+	// 1.7.x refused to load the plugin outright. Empty + UsesAddressLibrary = any runtime
+	// the address library covers.
+	//
+	// HasNoStructUse is likewise NOT set: we read game structs everywhere
+	// (InventoryEntryData, ExtraDataList, the menus), so claiming otherwise would be a lie.
 
 	return v;
 }();

@@ -271,13 +271,17 @@ namespace HKS::Favorites
 
 	bool FavoriteSelectedItem(RE::FormID a_expected)
 	{
-		// ItemList::get_selected (SE id 50086) + ItemList refresh (SE off 0x856A50) are
-		// SE-1.5.97 addresses; on other runtimes let the caller fall back.
-		if (REL::Module::GetRuntime() != REL::Module::Runtime::SE || !a_expected) {
+		if (!a_expected) {
 			return false;
 		}
 
-		void* itemList = nullptr;
+		// All of this used to be hand-rolled against SE-1.5.97 addresses (ItemList
+		// get_selected id 50086 + a raw refresh pointer), which is why it bailed out on
+		// anything but SE. CommonLibSSE-NG exposes both: GetSelectedItem() is pure C++
+		// (it just reads selectedIndex off the GFx root and indexes the item array, the
+		// same thing the native function did), and Update() carries the dual-runtime id.
+		// So the instant-star path now works on AE too.
+		RE::ItemList* itemList = nullptr;
 		if (auto* ui = RE::UI::GetSingleton()) {
 			if (auto menu = ui->GetMenu<RE::InventoryMenu>()) {
 				itemList = menu->GetRuntimeData().itemList;
@@ -289,15 +293,11 @@ namespace HKS::Favorites
 			return false;
 		}
 
-		using GetSelected_t = void* (*)(void*);
-		static REL::Relocation<GetSelected_t> getSelected{ REL::ID(50086) };
-		void* item = getSelected(itemList);
+		auto* item = itemList->GetSelectedItem();
 		if (!item) {
 			return false;
 		}
-
-		// Item layout: ItemData_0.ObjectDescription_8 == InventoryEntryData* at +0x8.
-		auto* entry = *reinterpret_cast<RE::InventoryEntryData**>(reinterpret_cast<char*>(item) + 0x8);
+		auto* entry = item->data.objDesc;
 		if (!entry || !entry->object || entry->object->GetFormID() != a_expected) {
 			return false;  // selection moved off the locked item
 		}
@@ -329,9 +329,7 @@ namespace HKS::Favorites
 		}
 
 		// Live list refresh, exactly what the game's favorite handler calls.
-		using RefreshList_t = void (*)(void*, RE::PlayerCharacter*);
-		static REL::Relocation<RefreshList_t> refresh{ REL::RelocationID(50099, 51031) };
-		refresh(itemList, player);
+		itemList->Update(player);
 
 		MarkFavorited(a_expected);
 		logger::info("favorited (real entry) {:08X}", a_expected);

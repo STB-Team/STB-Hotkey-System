@@ -32,11 +32,12 @@ namespace HKS::Favorites
 	// the item returns. Returns true if anything was removed. Main thread.
 	bool PruneUnfavorited();
 
-	// Favorite the item currently selected in the open inventory/container menu, the
-	// way the game does (real InventoryEntryData via ItemList::get_selected + live list
+	// Favorite the item currently selected in the open inventory/container menu, the way
+	// the game does (real InventoryEntryData via ItemList::GetSelectedItem + live list
 	// refresh) -- so the star shows immediately. Verifies the selection still matches
-	// a_expected (the locked target). Returns false if it couldn't (e.g. magic menu,
-	// AE runtime, selection moved) so the caller can fall back to EnsureFavorited.
-	// Must run on the main thread.
+	// a_expected (the locked target). Returns false if it couldn't (e.g. magic menu, no
+	// item menu open, selection moved) so the caller can fall back to EnsureFavorited.
+	// Works on every runtime: it goes through CommonLibSSE-NG's ItemList API instead of a
+	// hardcoded SE address. Must run on the main thread.
 	bool FavoriteSelectedItem(RE::FormID a_expected);
 }

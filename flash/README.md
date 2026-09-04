@@ -1,47 +1,110 @@
-# Flash / SWF assets
+# Keycap SWF — adapting it to another UI
 
-The keycap graphic is imported into the game's item menus at runtime, so it has to be a
-SWF that exports a single symbol named **`STBKeycap`** — a clip whose frame number equals
-the DX scancode of the key (mouse buttons at frame +256, gamepad at +266, matching the
-vanilla `SetHotkeyIcon` layout).
+The plugin does not draw keycaps itself. It attaches one symbol from
+`Interface/STB_Keycaps.swf` to each list row and jumps it to a frame. Swap that file and
+you have restyled every keycap in the mod — no code changes, no rebuild.
 
-Because the keycap art is taken from whichever UI overhaul the user runs, there is one
-folder per UI mod. Each folder holds only **our** sources; the third-party SWFs and the
-assets extracted from them are deliberately **not** committed (see `.gitignore`) — grab
-them from the UI mod yourself and build locally.
+## The contract
 
+A keycaps SWF must export a clip named **`STBKeycap`** whose frames are laid out like this:
+
+| input | frame |
+|---|---|
+| keyboard | the DX scancode itself (e.g. `2` = key **1**, `16` = **Q**, `42` = **Shift**) |
+| mouse | `256 +` button index |
+| gamepad | `266 +` button index |
+
+Frame 1 must `stop()`. The mapping lives in [`ChordScancodes`](../src/InventoryIcons.cpp) —
+the `+256 / +266` offsets are hardcoded there.
+
+This is exactly SkyUI's `ButtonArt` layout, so **any SkyUI-derived UI works unmodified**.
+
+## Where the art lives
+
+Vanilla Skyrim has **no keyboard keycap art at all** — it draws hotkeys as text
+(`AppendHotkeyText` + `$EverywhereMediumFont`). Checked every interface file in both SE
+and AE: only `Mouse` and `Gamepad` indicator frames exist. So there is nothing to take
+from the base game; every keycap set in the wild descends from SkyUI.
+
+- **SkyUI** — `interface/skyui/buttonart.swf`, inside `SkyUI_SE.bsa`. Character **153**,
+  exported as `ButtonArt`, 323 frames, labels `Keyboard@1` `Mouse@256` `Gamepad@266`
+  `Reserved@282` `Unused@290` `PS3@302`. 19 KB, 152 shapes — already a clean import source.
+- **UI overhauls** ship reskins of that same file: Dear Diary → `buttonArtDD.swf`,
+  DearDiaryHUD → `buttonArtDDW.swf`, and so on. Some (Untarnished) additionally embed a
+  copy of the clip inside their `favoritesmenu.swf`.
+
+## Building a set for another UI
+
+You need [JPEXS FFDec](https://github.com/jindrapetrik/jpexs-decompiler) (`ffdec-cli.exe`).
+FFDec trips over paths containing spaces or brackets — work in a plain temp folder.
+
+**1. Find the clip.** Try the mod's `interface/skyui/buttonart*.swf` first. Otherwise dump
+its `favoritesmenu.swf` and look for the keyboard section:
+
+```bash
+ffdec-cli -dumpSWF source.swf > tags.txt
+grep -n 'FrameLabel (name: "Keyboard")' tags.txt      # then read the enclosing DefineSprite (chid: N)
 ```
-flash/
-  Untarnished/   <- default; art taken from Untarnished UI
-  SkyUI/         <- planned
+
+**2. Check the frame layout.** Count `ShowFrame` tags inside that sprite up to each
+`FrameLabel`. You want `Mouse` at 256 and `Gamepad` at 266. Every SkyUI-derived set has
+this; if yours doesn't, the plugin's offsets won't line up and the wrong glyphs will show.
+
+**3. Add the `STBKeycap` export.** If the clip already exports under another name
+(SkyUI uses `ButtonArt`), **do not rename it** — menus import the real SkyUI asset under
+that name and you would collide with it. Add a *second* export for the same character.
+FFDec's CLI can't do this, so append the tag directly:
+
+```python
+import struct, zlib
+SRC, DST, CHID, NAME = "in.swf", "out.swf", 153, b"STBKeycap"
+
+raw = open(SRC, "rb").read()
+ver = raw[3]
+body = zlib.decompress(raw[8:]) if raw[:3] == b"CWS" else raw[8:]
+
+pos = ((5 + 4 * (body[0] >> 3) + 7) // 8) + 4          # skip FrameSize RECT + rate + count
+p = pos
+while p < len(body):                                    # walk to the End tag
+    tl, = struct.unpack_from("<H", body, p)
+    code, ln = tl >> 6, tl & 0x3F
+    hdr = 2
+    if ln == 0x3F:
+        ln, = struct.unpack_from("<I", body, p + 2); hdr = 6
+    if code == 0:
+        break
+    p += hdr + ln
+
+payload = struct.pack("<HH", 1, CHID) + NAME + b"\x00"  # ExportAssets: count, id, name
+tag = struct.pack("<H", (56 << 6) | len(payload)) + payload
+new = body[:p] + tag + body[p:]
+open(DST, "wb").write(b"CWS" + bytes([ver]) + struct.pack("<I", 8 + len(new)) + zlib.compress(new, 9))
 ```
 
-## Building a keycaps SWF for a new UI mod
+**4. Flatten the number keys if needed.** Sets that draw the full US key face show `!1`,
+`@2`, `$4` on the number row. The shifted symbol and the digit are separate shapes, so you
+can blank the symbol and re-centre the digit — worked example with exact character ids in
+[`SkyUI/README.md`](SkyUI/README.md).
 
-1. Make the folder: `flash/<UiMod>/`.
-2. Take that mod's `favoritesmenu.swf` (it carries the keyboard keycap glyphs).
-3. Find the glyph clip and give it the export name `STBKeycap`
-   (JPEXS FFDec: right-click the sprite -> *Add to exports*).
-4. Strip everything else out, so the file is a clean import source rather than a whole
-   menu (see below).
-5. Drop the result in the mod's `interface/STB_Keycaps.swf`.
+**5. Verify.**
 
-Step 4 matters: an unstripped menu SWF drags in the entire UI mod's symbol table and its
-SkyUI ActionScript classes. Those are exported assets inside a movie the game imports, and
-they can shadow the running SkyUI classes. Use the helper:
-
-```powershell
-.\tools\strip_icon_swf.ps1 -In "favoritesmenu.swf" -Out "STB_Keycaps.swf" -Symbol STBKeycap
+```bash
+ffdec-cli -export symbolClass sym out.swf   # STBKeycap must be listed
+ffdec-cli -export sprite     png out.swf    # 323 PNGs; spot-check digits, Shift, Space, mouse
 ```
 
-It keeps only the exported symbol plus its dependency closure, drops every other character,
-export, script and external import, then verifies the symbol still renders.
+**6. Ship** it as `Interface/STB_Keycaps.swf`.
 
-## Why per-mod folders
+## Permissions — read this
 
-The scancode -> frame mapping is fixed by the plugin ([`InventoryIcons.cpp`](../src/InventoryIcons.cpp)),
-so a new SWF only changes how the keys *look*. It must keep:
+The art belongs to whoever made that UI, and terms differ per mod.
 
-- the export name `STBKeycap`;
-- one frame per scancode, in the same order;
-- a `stop()` on frame 1.
+- **SkyUI** allows using and modifying its assets **as long as SkyUI is credited**, and not
+  in paid mods. Its "seek permission from Psychosteve and Jelidity" note applies to the
+  `icons_*.swf` files, **not** to `buttonart.swf`.
+- **Other overhauls vary.** Untarnished's keycaps, for instance, are not its author's own —
+  they trace back to Dear Diary Dark Mode, i.e. a different author again.
+
+Building a set locally from a UI mod you already have installed is your own business.
+**Redistributing** it is what needs the author's permission. That is why no `.swf` is
+committed here — only the recipe.

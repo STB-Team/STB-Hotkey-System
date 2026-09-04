@@ -90,7 +90,25 @@ set(Boost_USE_STATIC_LIBS ON)
 
 # ---- Dependencies ----
 
-find_package(CommonLibSSE CONFIG REQUIRED)
+# CommonLibSSE-NG: one DLL for SE 1.5.97, AE 1.6.x and 1.7.x.
+#
+# Prefer the local checkout pointed at by CommonLibSSEPath_NG. The vcpkg port
+# (commonlibsse-ng 3.7.0) is too old for modern AE: its runtime classifier switches on the
+# MINOR version (case 6 -> AE, default -> SE), so a 1.7.x game is mistaken for SE and the
+# plugin would resolve SE-only offsets (see src/RE/Offsets.Ext.h) against an AE binary.
+# The local checkout classifies "minor >= 6" as AE, which is what we need.
+# Set STB_USE_VCPKG_COMMONLIB=ON to force the vcpkg port instead.
+option(STB_USE_VCPKG_COMMONLIB "Use the vcpkg commonlibsse-ng port instead of CommonLibSSEPath_NG" OFF)
+set_from_environment(CommonLibSSEPath_NG)
+if (NOT STB_USE_VCPKG_COMMONLIB AND DEFINED CommonLibSSEPath_NG AND EXISTS "${CommonLibSSEPath_NG}")
+	message(STATUS "CommonLibSSE-NG from: ${CommonLibSSEPath_NG}")
+	set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+	add_subdirectory("${CommonLibSSEPath_NG}" ./CommonLibSSE/build)
+else ()
+	message(STATUS "CommonLibSSE-NG from vcpkg (AE 1.7.x will be misdetected as SE)")
+	find_package(CommonLibSSE CONFIG REQUIRED)
+endif ()
+
 find_package(spdlog REQUIRED CONFIG)
 find_package(nlohmann_json REQUIRED CONFIG)
 find_package(xbyak REQUIRED CONFIG)
