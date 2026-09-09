@@ -40,20 +40,33 @@ namespace HKS
 
 		_debugLog = ini.GetBoolValue("Debug", "bDebugLog", _debugLog);
 
+		_rememberHand = ini.GetBoolValue("Gameplay", "bRememberHand", _rememberHand);
+
 		_iconAfterName = ini.GetBoolValue("Icons", "bAfterName", _iconAfterName);
 		_iconScale = static_cast<float>(ini.GetDoubleValue("Icons", "fScale", _iconScale));
 		_iconY = static_cast<float>(ini.GetDoubleValue("Icons", "fY", _iconY));
 		_iconX = static_cast<float>(ini.GetDoubleValue("Icons", "fX", _iconX));
 		_iconGap = static_cast<float>(ini.GetDoubleValue("Icons", "fGap", _iconGap));
+		_iconsInv = ini.GetBoolValue("Icons", "bShow", _iconsInv);
+		_showHandLabel = ini.GetBoolValue("Icons", "bShowHandLabel", _showHandLabel);
+		_handLabelSize = static_cast<float>(ini.GetDoubleValue("Icons", "fHandLabelSize", _handLabelSize));
+		_handLabelGap = static_cast<float>(ini.GetDoubleValue("Icons", "fHandLabelGap", _handLabelGap));
 
 		// Per-menu overrides (default to the inventory values if unset).
+		_iconsCont = ini.GetBoolValue("IconsContainer", "bShow", _iconsInv);
+		_iconXCont = static_cast<float>(ini.GetDoubleValue("IconsContainer", "fX", _iconX));
+		_iconGapCont = static_cast<float>(ini.GetDoubleValue("IconsContainer", "fGap", _iconGap));
+		_iconsMagic = ini.GetBoolValue("IconsMagic", "bShow", _iconsInv);
 		_iconXMagic = static_cast<float>(ini.GetDoubleValue("IconsMagic", "fX", _iconX));
 		_iconGapMagic = static_cast<float>(ini.GetDoubleValue("IconsMagic", "fGap", _iconGap));
+		_iconsFav = ini.GetBoolValue("IconsFavorites", "bShow", _iconsInv);
 		_iconXFav = static_cast<float>(ini.GetDoubleValue("IconsFavorites", "fX", _iconX));
 		_iconGapFav = static_cast<float>(ini.GetDoubleValue("IconsFavorites", "fGap", _iconGap));
 
-		logger::info("settings loaded: modifier=0x{:X} group=0x{:X} blockMenuKeys={} chords={} afterName={} scale={} Y={} X={}/{}/{} gap={}/{}/{}",
-			_assignModifier, _groupModifier, _blockMenuKeys, _enableChords, _iconAfterName, _iconScale, _iconY,
-			_iconX, _iconXMagic, _iconXFav, _iconGap, _iconGapMagic, _iconGapFav);
+		logger::info("settings loaded: modifier=0x{:X} group=0x{:X} blockMenuKeys={} chords={} rememberHand={}",
+			_assignModifier, _groupModifier, _blockMenuKeys, _enableChords, _rememberHand);
+		logger::info("icons: show inv/cont/magic/fav={}/{}/{}/{} handLabel={} afterName={} scale={} Y={} X={}/{}/{}/{} gap={}/{}/{}/{}",
+			_iconsInv, _iconsCont, _iconsMagic, _iconsFav, _showHandLabel, _iconAfterName, _iconScale, _iconY,
+			_iconX, _iconXCont, _iconXMagic, _iconXFav, _iconGap, _iconGapCont, _iconGapMagic, _iconGapFav);
 	}
 }

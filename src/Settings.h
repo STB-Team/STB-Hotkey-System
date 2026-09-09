@@ -71,11 +71,20 @@ namespace HKS
 		// binding removals and warnings are always logged regardless.
 		static bool DebugLog() { return _debugLog; }
 
-		// Keycap rendering (tweak live: edit the INI, reopen the menu). X and Gap are
-		// per-menu kind (each list lays out differently); the rest is shared.
+		// When a hotkey is assigned, remember which hand(s) the item or spell was in at that
+		// moment and put it back there on every press -- the way SkyUI's saved equip state
+		// works. Held in both hands when bound means both hands on one press; held only in
+		// the left means the left hand, every time, instead of the engine's "whichever hand
+		// is free". A form that was not equipped at all when bound records no preference and
+		// keeps the old behaviour.
+		static bool RememberHand() { return _rememberHand; }
+
+		// Keycap rendering (tweak live: edit the INI, reopen the menu). Each list lays out
+		// differently, so Show/X/Gap are per menu kind; the rest is shared.
 		enum class MenuKind
 		{
-			kInventory,
+			kInventory,   // the player's own inventory
+			kContainer,   // container / barter / gift -- someone else's list beside yours
 			kMagic,
 			kFavorites
 		};
@@ -84,9 +93,31 @@ namespace HKS
 		static float IconScale() { return _iconScale; }
 		static float IconY() { return _iconY; }
 
+		// Draw keycaps in this menu at all.
+		static bool IconsEnabled(MenuKind a_kind)
+		{
+			switch (a_kind) {
+			case MenuKind::kContainer:
+				return _iconsCont;
+			case MenuKind::kMagic:
+				return _iconsMagic;
+			case MenuKind::kFavorites:
+				return _iconsFav;
+			default:
+				return _iconsInv;
+			}
+		}
+
+		// Draw R / L after the keycap for a bind that remembers a hand.
+		static bool  ShowHandLabel() { return _showHandLabel; }
+		static float HandLabelSize() { return _handLabelSize; }
+		static float HandLabelGap() { return _handLabelGap; }
+
 		static float IconX(MenuKind a_kind)
 		{
 			switch (a_kind) {
+			case MenuKind::kContainer:
+				return _iconXCont;
 			case MenuKind::kMagic:
 				return _iconXMagic;
 			case MenuKind::kFavorites:
@@ -98,6 +129,8 @@ namespace HKS
 		static float IconGap(MenuKind a_kind)
 		{
 			switch (a_kind) {
+			case MenuKind::kContainer:
+				return _iconGapCont;
 			case MenuKind::kMagic:
 				return _iconGapMagic;
 			case MenuKind::kFavorites:
@@ -118,11 +151,21 @@ namespace HKS
 		static inline bool          _migrateVanillaHotkeys = true;
 		static inline bool          _warnKeyConflict = true;
 		static inline bool          _debugLog = false;
+		static inline bool          _rememberHand = true;
+		static inline bool          _iconsInv = true;
+		static inline bool          _iconsCont = true;
+		static inline bool          _iconsMagic = true;
+		static inline bool          _iconsFav = true;
+		static inline bool          _showHandLabel = true;
+		static inline float         _handLabelSize = 14.0f;
+		static inline float         _handLabelGap = 4.0f;
 		static inline bool          _iconAfterName = true;
 		static inline float         _iconScale = 75.0f;
 		static inline float         _iconY = 2.0f;
 		static inline float         _iconX = 40.0f;
 		static inline float         _iconGap = 20.0f;
+		static inline float         _iconXCont = 40.0f;
+		static inline float         _iconGapCont = 20.0f;
 		static inline float         _iconXMagic = 25.0f;
 		static inline float         _iconGapMagic = 20.0f;
 		static inline float         _iconXFav = 40.0f;

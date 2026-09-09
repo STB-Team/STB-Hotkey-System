@@ -16,3 +16,7 @@ $STB_HK_KeyConflict_Cancel	Отмена
 ; --- подсказки в нижней панели инвентаря / магии ---
 $STB_HK_Hint_Assign	Назначить хоткей
 $STB_HK_Hint_Group	Добавить в группу
+
+; --- метки руки после иконки клавиши ---
+$STB_HK_Hand_Right	R
+$STB_HK_Hand_Left	L

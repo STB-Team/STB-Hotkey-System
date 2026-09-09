@@ -19,7 +19,8 @@ namespace HKS::EquipDispatch
 			return form ? form->As<RE::BGSEquipSlot>() : nullptr;
 		}
 
-		void EquipSpellForm(RE::PlayerCharacter* a_player, RE::ActorEquipManager* a_em, RE::SpellItem* a_spell)
+		void EquipSpellForm(RE::PlayerCharacter* a_player, RE::ActorEquipManager* a_em,
+			RE::SpellItem* a_spell, std::uint8_t a_hands)
 		{
 			constexpr RE::FormID kRight = 0x13F42;
 			constexpr RE::FormID kLeft = 0x13F43;
@@ -35,7 +36,21 @@ namespace HKS::EquipDispatch
 				return;
 			}
 
-			// One-handed: mirror vanilla favorites, prefer the empty/other hand.
+			// Remembered hand wins: the spell goes back exactly where it was when the key
+			// was assigned, every press. Held in both hands at that moment means both hands
+			// on one press, which is the thing the alternating fallback below can only get
+			// to on the second.
+			if (a_hands != kHandNone) {
+				if (a_hands & kHandRight) {
+					a_em->EquipSpell(a_player, a_spell, EquipSlot(kRight));
+				}
+				if (a_hands & kHandLeft) {
+					a_em->EquipSpell(a_player, a_spell, EquipSlot(kLeft));
+				}
+				return;
+			}
+
+			// No preference recorded: mirror vanilla favorites, prefer the empty/other hand.
 			auto& rt = a_player->GetActorRuntimeData();
 			if (rt.selectedSpells[RE::Actor::SlotTypes::kLeftHand] != a_spell) {
 				a_em->EquipSpell(a_player, a_spell, EquipSlot(kLeft));
@@ -159,7 +174,8 @@ namespace HKS::EquipDispatch
 		// NOT currently worn, so the dual-wield path equips a *different* physical copy to
 		// the free hand. nullptr means "no distinct spare list" (plain stacked copies), in
 		// which case the caller lets the engine pick a copy.
-		RE::ExtraDataList* FindUnwornInstance(RE::TESBoundObject* a_bound, RE::FormID a_ench, std::int32_t a_health)
+		RE::ExtraDataList* FindUnwornInstance(RE::TESBoundObject* a_bound, RE::FormID a_ench,
+			std::int32_t a_health, RE::ExtraDataList* a_skip = nullptr)
 		{
 			auto* player = RE::PlayerCharacter::GetSingleton();
 			auto* changes = player ? player->GetInventoryChanges() : nullptr;
@@ -171,7 +187,7 @@ namespace HKS::EquipDispatch
 					continue;
 				}
 				for (auto* xl : *entry->extraLists) {
-					if (!xl) {
+					if (!xl || xl == a_skip) {
 						continue;
 					}
 					RE::FormID    ench = 0;
@@ -188,6 +204,28 @@ namespace HKS::EquipDispatch
 				}
 			}
 			return nullptr;
+		}
+
+		// Put an item in the hand(s) the bind remembers. Both hands means the player was
+		// dual-wielding it when the key was assigned, so a second interchangeable copy goes
+		// to the left -- FindUnwornInstance skips the one already going to the right, and a
+		// null list is fine: plain stacked copies carry no extra data and the engine picks.
+		void EquipToHands(RE::PlayerCharacter* a_player, RE::ActorEquipManager* a_em,
+			RE::TESBoundObject* a_bound, const ItemId& a_id, RE::ExtraDataList* a_xl)
+		{
+			constexpr RE::FormID kRight = 0x13F42;
+			constexpr RE::FormID kLeft = 0x13F43;
+
+			if (a_id.hands == kHandBoth) {
+				a_em->EquipObject(a_player, a_bound, a_xl, 1, EquipSlot(kRight));
+				if (CountMatchingInstances(a_bound, a_id.ench, a_id.health) >= 2) {
+					a_em->EquipObject(a_player, a_bound,
+						FindUnwornInstance(a_bound, a_id.ench, a_id.health, a_xl), 1, EquipSlot(kLeft));
+				}
+				return;
+			}
+			a_em->EquipObject(a_player, a_bound, a_xl, 1,
+				EquipSlot((a_id.hands & kHandRight) != 0 ? kRight : kLeft));
 		}
 
 		// Is the bound item on the player right now?
@@ -262,7 +300,7 @@ namespace HKS::EquipDispatch
 			switch (form->GetFormType()) {
 			case RE::FormType::Spell:
 				if (auto* spell = form->As<RE::SpellItem>()) {
-					EquipSpellForm(player, em, spell);
+					EquipSpellForm(player, em, spell, a_id.hands);
 				}
 				break;
 
@@ -296,7 +334,7 @@ namespace HKS::EquipDispatch
 					// rather than uid, so it still fires when a mod (e.g. Wheeler) stamps a
 					// unique ExtraUniqueID on every weapon copy -- otherwise our bind reads
 					// as one distinct instance and the toggle below just puts it away.
-					if (dualWield && (inRight != inLeft) &&
+					if (a_id.hands == kHandNone && dualWield && (inRight != inLeft) &&
 						CountMatchingInstances(bound, a_id.ench, a_id.health) >= 2) {
 						constexpr RE::FormID kRight = 0x13F42;
 						constexpr RE::FormID kLeft = 0x13F43;
@@ -306,6 +344,19 @@ namespace HKS::EquipDispatch
 					}
 
 					auto* xl = FindInstanceList(bound, a_id);
+
+					// --- Remembered hand ---
+					// Assigned while the item was in hand, so it goes back to that hand
+					// rather than to whichever one the engine feels like. Still a toggle:
+					// pressing it while worn puts it away, same as everything else.
+					if (a_id.hands != kHandNone) {
+						if (IsWornNow(player, form, bound, a_id, xl)) {
+							em->UnequipObject(player, bound, xl);
+						} else {
+							EquipToHands(player, em, bound, a_id, xl);
+						}
+						break;
+					}
 
 					// --- Instance-precise bind (enchanted/tempered/unique copy) ---
 					// You only ever own the one specific instance, so a plain toggle is
@@ -343,9 +394,9 @@ namespace HKS::EquipDispatch
 			bool left = false;
 		};
 
-		// Equip one member of a group. No toggling: a group press means "put this loadout
-		// on", so an item already worn is simply left alone by the engine. Hand items take
-		// the right hand first, then the left, in the order the player added them.
+		// Equip one member of a group. No toggling here -- EquipSet decides that for the set
+		// as a whole. A member that remembers a hand goes back to it and claims that hand;
+		// the rest take the right hand first, then the left, in the order they were added.
 		void EquipGroupMember(RE::PlayerCharacter* a_player, RE::ActorEquipManager* a_em,
 			const ItemId& a_id, Hands& a_hands)
 		{
@@ -366,6 +417,12 @@ namespace HKS::EquipDispatch
 			if (auto* spell = form->As<RE::SpellItem>()) {
 				if (IsVoiceForm(form)) {
 					a_em->EquipSpell(a_player, spell, spell->GetEquipSlot());
+					return;
+				}
+				if (a_id.hands != kHandNone) {
+					EquipSpellForm(a_player, a_em, spell, a_id.hands);
+					a_hands.right = a_hands.right || (a_id.hands & kHandRight) != 0;
+					a_hands.left = a_hands.left || (a_id.hands & kHandLeft) != 0;
 					return;
 				}
 				// Compare the equip-slot POINTER rather than calling IsTwoHanded(): a broken
@@ -394,6 +451,12 @@ namespace HKS::EquipDispatch
 			if (auto* weap = form->As<RE::TESObjectWEAP>()) {
 				const bool oneHanded = weap->IsOneHandedSword() || weap->IsOneHandedDagger() ||
 				                       weap->IsOneHandedAxe() || weap->IsOneHandedMace() || weap->IsStaff();
+				if (oneHanded && a_id.hands != kHandNone) {
+					EquipToHands(a_player, a_em, bound, a_id, xl);
+					a_hands.right = a_hands.right || (a_id.hands & kHandRight) != 0;
+					a_hands.left = a_hands.left || (a_id.hands & kHandLeft) != 0;
+					return;
+				}
 				if (!oneHanded) {  // greatsword, bow, crossbow -- takes everything
 					a_em->EquipObject(a_player, bound, xl);
 					a_hands.right = a_hands.left = true;
@@ -488,6 +551,38 @@ namespace HKS::EquipDispatch
 				EquipGroupMember(player, em, id, hands);
 			}
 		}
+	}
+
+	std::uint8_t CurrentHands(RE::TESForm* a_form)
+	{
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (!player || !a_form) {
+			return kHandNone;
+		}
+		std::uint8_t mask = kHandNone;
+		// Magic lives in selectedSpells, not in the process's hand slots -- the same place
+		// EquipSpellForm reads when it decides which hand is free.
+		if (auto* spell = a_form->As<RE::SpellItem>()) {
+			auto& rt = player->GetActorRuntimeData();
+			if (rt.selectedSpells[RE::Actor::SlotTypes::kRightHand] == spell) {
+				mask |= kHandRight;
+			}
+			if (rt.selectedSpells[RE::Actor::SlotTypes::kLeftHand] == spell) {
+				mask |= kHandLeft;
+			}
+			return mask;
+		}
+		auto* proc = player->GetActorRuntimeData().currentProcess;
+		if (!proc) {
+			return kHandNone;
+		}
+		if (proc->GetEquippedRightHand() == a_form) {
+			mask |= kHandRight;
+		}
+		if (proc->GetEquippedLeftHand() == a_form) {
+			mask |= kHandLeft;
+		}
+		return mask;
 	}
 
 	bool IsVoiceForm(RE::TESForm* a_form)

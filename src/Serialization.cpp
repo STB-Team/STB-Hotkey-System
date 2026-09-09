@@ -43,6 +43,7 @@ namespace HKS::Serialization
 				Write<RE::FormID>(a_intfc, id.ench);
 				Write<std::uint16_t>(a_intfc, id.uid);
 				Write<std::int32_t>(a_intfc, id.health);
+				Write<std::uint8_t>(a_intfc, id.hands);
 			}
 		}
 
@@ -70,14 +71,17 @@ namespace HKS::Serialization
 			if (a_saved.ench != 0) {
 				a_intfc->ResolveFormID(a_saved.ench, resolvedEnch);
 			}
-			a_out = ItemId{ resolved, resolvedEnch, a_saved.uid, a_saved.health };
+			a_out = ItemId{ resolved, resolvedEnch, a_saved.uid, a_saved.health, a_saved.hands };
 			return true;
 		}
 
-		bool ReadItem(SKSE::SerializationInterface* a_intfc, ItemId& a_out)
+		bool ReadItem(SKSE::SerializationInterface* a_intfc, ItemId& a_out, bool a_withHands)
 		{
-			return Read(a_intfc, a_out.form) && Read(a_intfc, a_out.ench) &&
-			       Read(a_intfc, a_out.uid) && Read(a_intfc, a_out.health);
+			if (!Read(a_intfc, a_out.form) || !Read(a_intfc, a_out.ench) ||
+				!Read(a_intfc, a_out.uid) || !Read(a_intfc, a_out.health)) {
+				return false;
+			}
+			return !a_withHands || Read(a_intfc, a_out.hands);
 		}
 
 		bool ReadBind(SKSE::SerializationInterface* a_intfc, Bind& a_out)
@@ -114,11 +118,12 @@ namespace HKS::Serialization
 				logger::warn("unknown co-save record {:08X}, skipping", type);
 				continue;
 			}
-			if (version != kVersion && version != kVersionSingleItem) {
-				logger::warn("HOTK version {} is not readable (expected {} or {}), ignoring",
-					version, kVersion, kVersionSingleItem);
+			if (version != kVersion && version != kVersionNoHands && version != kVersionSingleItem) {
+				logger::warn("HOTK version {} is not readable (expected {}, {} or {}), ignoring",
+					version, kVersion, kVersionNoHands, kVersionSingleItem);
 				continue;
 			}
+			const bool withHands = version >= kVersion;
 
 			std::uint32_t count = 0;
 			if (!Read(a_intfc, count)) {
@@ -136,7 +141,7 @@ namespace HKS::Serialization
 					std::uint32_t deviceRaw = 0;
 					ItemId        one;
 					std::uint32_t nKeys = 0;
-					if (!Read(a_intfc, deviceRaw) || !ReadItem(a_intfc, one) || !Read(a_intfc, nKeys)) {
+					if (!Read(a_intfc, deviceRaw) || !ReadItem(a_intfc, one, false) || !Read(a_intfc, nKeys)) {
 						logger::error("truncated hotkey #{}", i);
 						break;
 					}
@@ -170,7 +175,7 @@ namespace HKS::Serialization
 					saved.reserve(nItems);
 					for (std::uint32_t n = 0; n < nItems; ++n) {
 						ItemId id;
-						if (!ReadItem(a_intfc, id)) {
+						if (!ReadItem(a_intfc, id, withHands)) {
 							itemsOk = false;
 							break;
 						}

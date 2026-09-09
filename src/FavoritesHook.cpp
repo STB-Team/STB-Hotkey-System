@@ -72,11 +72,19 @@ namespace HKS
 				// vanilla "Keyboard" symbol indexed by scancode -> gotoAndStop(code)).
 				std::uint32_t k1 = 0;
 				std::uint32_t k2 = 0;
+				std::uint32_t hands = 0;
 
 				RE::GFxValue fidVal;
-				if (entry.GetMember("formId", &fidVal) && fidVal.IsNumber()) {
+				if (Settings::IconsEnabled(Settings::MenuKind::kFavorites) &&
+					entry.GetMember("formId", &fidVal) && fidVal.IsNumber()) {
 					const auto fid = static_cast<RE::FormID>(fidVal.GetNumber());
 					if (const auto* hk = mgr->FindByForm(fid)) {
+						for (const auto& member : hk->items) {
+							if (member.form == fid) {
+								hands = member.hands;
+								break;
+							}
+						}
 						auto keys = hk->bind.keys;
 						std::sort(keys.begin(), keys.end(), [](std::uint32_t a, std::uint32_t b) {
 							const int ra = DisplayRank(a);
@@ -96,12 +104,14 @@ namespace HKS
 					RE::GFxValue v;
 					return (entry.GetMember(a_name, &v) && v.IsNumber()) ? static_cast<std::uint32_t>(v.GetNumber()) : 0;
 				};
-				if (readNum("hotkeyKey1") == k1 && readNum("hotkeyKey2") == k2) {
+				if (readNum("hotkeyKey1") == k1 && readNum("hotkeyKey2") == k2 &&
+					readNum("hotkeyHands") == hands) {
 					continue;
 				}
 
 				entry.SetMember("hotkeyKey1", RE::GFxValue{ static_cast<double>(k1) });
 				entry.SetMember("hotkeyKey2", RE::GFxValue{ static_cast<double>(k2) });
+				entry.SetMember("hotkeyHands", RE::GFxValue{ static_cast<double>(hands) });
 				changed = true;
 			}
 

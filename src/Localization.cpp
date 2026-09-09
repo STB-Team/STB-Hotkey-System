@@ -34,6 +34,10 @@ namespace HKS::Localization
 				// --- button hints along the bottom of the item menus ---
 				{ "$STB_HK_Hint_Assign", "Assign hotkey" },
 				{ "$STB_HK_Hint_Group", "Add to group" },
+
+				// --- hand markers drawn after the keycap ---
+				{ "$STB_HK_Hand_Right", "R" },
+				{ "$STB_HK_Hand_Left", "L" },
 			};
 			return kDefaults;
 		}

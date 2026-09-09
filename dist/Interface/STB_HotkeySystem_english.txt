@@ -18,3 +18,7 @@ $STB_HK_KeyConflict_Cancel	Cancel
 ; --- button hints along the bottom of the inventory / magic menus ---
 $STB_HK_Hint_Assign	Assign hotkey
 $STB_HK_Hint_Group	Add to group
+
+; --- hand markers drawn after the keycap (which hand the bind equips into) ---
+$STB_HK_Hand_Right	R
+$STB_HK_Hand_Left	L

@@ -2,6 +2,7 @@
 
 #include "BottomBarHint.h"
 #include "Favorites.h"
+#include "Localization.h"
 #include "HotkeyManager.h"
 #include "Settings.h"
 #include "swfhelper/ImportData.h"
@@ -72,13 +73,21 @@ namespace HKS
 			}
 		}
 
-		void ChordScancodes(const ItemId& a_id, std::uint32_t& a_k1, std::uint32_t& a_k2)
+		void ChordScancodes(const ItemId& a_id, std::uint32_t& a_k1, std::uint32_t& a_k2,
+			std::uint32_t& a_hands)
 		{
 			a_k1 = 0;
 			a_k2 = 0;
+			a_hands = 0;
 			const auto* hk = HotkeyManager::GetSingleton()->FindByItem(a_id);
 			if (!hk) {
 				return;
+			}
+			for (const auto& member : hk->items) {
+				if (member.Same(a_id)) {
+					a_hands = member.hands;
+					break;
+				}
 			}
 			auto keys = hk->bind.keys;
 			std::sort(keys.begin(), keys.end(), [](std::uint32_t a, std::uint32_t b) {
@@ -100,7 +109,9 @@ namespace HKS
 			}
 		}
 
-		void AttachKeycap(RE::GFxValue* a_parent, const char* a_name, std::uint32_t a_scancode,
+		// Returns the keycap's right edge, so whatever follows it can be placed; 0 when
+		// nothing was drawn.
+		double AttachKeycap(RE::GFxValue* a_parent, const char* a_name, std::uint32_t a_scancode,
 			std::int32_t a_depth, double a_x, double a_y, double a_scale)
 		{
 			RE::GFxValue icon;
@@ -110,13 +121,13 @@ namespace HKS
 				if (icon.IsObject()) {
 					icon.SetMember("_visible", RE::GFxValue{ false });
 				}
-				return;
+				return 0.0;
 			}
 
 			if (!icon.IsObject()) {
 				a_parent->AttachMovie(&icon, kKeycapExport, a_name, a_depth, nullptr);
 				if (!icon.IsObject()) {
-					return;
+					return 0.0;
 				}
 			}
 
@@ -126,6 +137,82 @@ namespace HKS
 			icon.SetMember("_yscale", RE::GFxValue{ a_scale });
 			icon.SetMember("_x", RE::GFxValue{ a_x });
 			icon.SetMember("_y", RE::GFxValue{ a_y });
+
+			RE::GFxValue width;
+			const double w = (icon.GetMember("_width", &width) && width.IsNumber()) ? width.GetNumber() : 0.0;
+			return a_x + w;
+		}
+
+		// "R", "L" or "R L" after the keycap, the way SkyUI marks which hand something is
+		// held in -- here it is the hand the BIND will use, recorded when it was assigned.
+		//
+		// A text field rather than a clip: the hand indicator every UI draws lives in its
+		// own list-entry art (SkyUI's item menus do not even export one), so there is
+		// nothing to attach that would work everywhere. The row's own name field supplies
+		// the format, so the letters come out in the list's font at whatever size the INI
+		// asks for, with no font name hardcoded and nothing to embed.
+		void AttachHandLabel(RE::GFxValue* a_parent, RE::GFxValue* a_textField, std::uint32_t a_hands,
+			double a_x, double a_y)
+		{
+			constexpr const char* kName = "STBhkHand";
+
+			RE::GFxValue field;
+			a_parent->GetMember(kName, &field);
+
+			if (a_hands == 0 || !Settings::ShowHandLabel()) {
+				if (field.IsObject()) {
+					field.SetMember("_visible", RE::GFxValue{ false });
+				}
+				return;
+			}
+
+			if (!field.IsObject()) {
+				const RE::GFxValue args[6]{
+					RE::GFxValue{ kName }, RE::GFxValue{ 0x6FFFFFF2 },
+					RE::GFxValue{ a_x }, RE::GFxValue{ a_y },
+					RE::GFxValue{ 60.0 }, RE::GFxValue{ 24.0 }
+				};
+				a_parent->Invoke("createTextField", nullptr, args, std::size(args));
+				if (!a_parent->GetMember(kName, &field) || !field.IsObject()) {
+					return;
+				}
+				field.SetMember("selectable", RE::GFxValue{ false });
+				field.SetMember("border", RE::GFxValue{ false });
+				field.SetMember("background", RE::GFxValue{ false });
+				field.SetMember("autoSize", RE::GFxValue{ "left" });
+				if (a_textField && a_textField->IsObject()) {
+					RE::GFxValue embed;
+					if (a_textField->GetMember("embedFonts", &embed)) {
+						field.SetMember("embedFonts", embed);
+					}
+				}
+			}
+
+			std::string text;
+			if (a_hands & kHandRight) {
+				text = Localization::Get("$STB_HK_Hand_Right");
+			}
+			if (a_hands & kHandLeft) {
+				if (!text.empty()) {
+					text += ' ';
+				}
+				text += Localization::Get("$STB_HK_Hand_Left");
+			}
+			field.SetMember("text", RE::GFxValue{ text.c_str() });
+
+			// The format has to be re-applied after the text, or the field falls back to the
+			// default device font at its own size.
+			if (a_textField && a_textField->IsObject()) {
+				RE::GFxValue format;
+				if (a_textField->Invoke("getTextFormat", &format) && format.IsObject()) {
+					format.SetMember("size", RE::GFxValue{ static_cast<double>(Settings::HandLabelSize()) });
+					field.Invoke("setTextFormat", nullptr, &format, 1);
+				}
+			}
+
+			field.SetMember("_x", RE::GFxValue{ a_x });
+			field.SetMember("_y", RE::GFxValue{ a_y });
+			field.SetMember("_visible", RE::GFxValue{ true });
 		}
 
 		// Wraps InventoryListEntry.prototype.formatName: runs the original, then draws the
@@ -172,12 +259,16 @@ namespace HKS
 
 			std::uint32_t k1 = 0;
 			std::uint32_t k2 = 0;
+			std::uint32_t hands = 0;
 			RE::GFxValue  v;
 			if (a_data.GetMember("hotkeyKey1", &v) && v.IsNumber()) {
 				k1 = static_cast<std::uint32_t>(v.GetNumber());
 			}
 			if (a_data.GetMember("hotkeyKey2", &v) && v.IsNumber()) {
 				k2 = static_cast<std::uint32_t>(v.GetNumber());
+			}
+			if (a_data.GetMember("hotkeyHands", &v) && v.IsNumber()) {
+				hands = static_cast<std::uint32_t>(v.GetNumber());
 			}
 
 			const double scale = Settings::IconScale();
@@ -218,8 +309,11 @@ namespace HKS
 			}
 			const double x2 = x1 + Settings::IconGap(a_kind);
 
-			AttachKeycap(a_clip, "STBhk1", k1, 0x6FFFFFF0, x1, y, scale);
-			AttachKeycap(a_clip, "STBhk2", k2, 0x6FFFFFF1, x2, y, scale);
+			const double end1 = AttachKeycap(a_clip, "STBhk1", k1, 0x6FFFFFF0, x1, y, scale);
+			const double end2 = AttachKeycap(a_clip, "STBhk2", k2, 0x6FFFFFF1, x2, y, scale);
+
+			AttachHandLabel(a_clip, a_textField, hands,
+				(std::max)(end1, end2) + Settings::HandLabelGap(), y);
 		}
 
 		// Inventory/Magic/Container/etc: formatName(entryField, entryObject, state).
@@ -344,7 +438,7 @@ namespace HKS
 		// Throttled rather than size-gated: enchanting/tempering can rebuild an entry
 		// object (dropping our stamp) without changing the list length, so we re-scan
 		// periodically and let the per-entry diff suppress redundant UpdateList calls.
-		void PushKeycaps(RE::IMenu* a_menu, bool a_livePrune)
+		void PushKeycaps(RE::IMenu* a_menu, bool a_livePrune, Settings::MenuKind a_kind)
 		{
 			static int frame = 0;
 
@@ -390,6 +484,7 @@ namespace HKS
 
 				std::uint32_t k1 = 0;
 				std::uint32_t k2 = 0;
+				std::uint32_t hands = 0;
 				// In Barter/Container the same itemList shows BOTH sides. SkyUI tags the
 				// player's own items with the inventory filter flags (< 1024) and the
 				// merchant/container stock with the container flags (>= 2048). A fungible
@@ -400,23 +495,27 @@ namespace HKS
 					continue;  // active effect row -- never ours to stamp
 				}
 
+				// Keycaps can be switched off per menu; stamping zeros clears any that are
+				// already drawn, so the toggle takes effect without reopening the menu.
 				const bool playerSide = readNum("filterFlag") < 1024;
-				if (playerSide) {
+				if (playerSide && Settings::IconsEnabled(a_kind)) {
 					if (const auto fid = static_cast<RE::FormID>(readNum("formId"))) {
 						ItemId id;
 						id.form = fid;
 						id.ench = static_cast<RE::FormID>(readNum("STBench"));
 						id.uid = static_cast<std::uint16_t>(readNum("STBuid"));
 						id.health = static_cast<std::int32_t>(readNum("STBhealth"));
-						ChordScancodes(id, k1, k2);
+						ChordScancodes(id, k1, k2, hands);
 					}
 				}
-				if (readNum("hotkeyKey1") == k1 && readNum("hotkeyKey2") == k2) {
+				if (readNum("hotkeyKey1") == k1 && readNum("hotkeyKey2") == k2 &&
+					readNum("hotkeyHands") == hands) {
 					continue;
 				}
 
 				entry.SetMember("hotkeyKey1", RE::GFxValue{ static_cast<double>(k1) });
 				entry.SetMember("hotkeyKey2", RE::GFxValue{ static_cast<double>(k2) });
+				entry.SetMember("hotkeyHands", RE::GFxValue{ static_cast<double>(hands) });
 				changed = true;
 			}
 
@@ -437,16 +536,16 @@ namespace HKS
 	void Advance##TAG(RE::IMenu* a_this, float a_interval, std::uint32_t a_time)                   \
 	{                                                                                             \
 		_adv##TAG(a_this, a_interval, a_time);                                                    \
-		PushKeycaps(a_this, LIVEPRUNE);                                                           \
+		PushKeycaps(a_this, LIVEPRUNE, KIND);                                                           \
 	}
 
 		// Live prune only where the player un-favorites (F); trade menus move items
 		// between sides, which would read as un-favorited mid-transaction.
 		HKS_MENU_HOOKS(Inv, Settings::MenuKind::kInventory, true, true)
-		HKS_MENU_HOOKS(Cont, Settings::MenuKind::kInventory, false, false)
+		HKS_MENU_HOOKS(Cont, Settings::MenuKind::kContainer, false, false)
 		HKS_MENU_HOOKS(Magic, Settings::MenuKind::kMagic, true, true)
-		HKS_MENU_HOOKS(Gift, Settings::MenuKind::kInventory, false, false)
-		HKS_MENU_HOOKS(Bart, Settings::MenuKind::kInventory, false, false)
+		HKS_MENU_HOOKS(Gift, Settings::MenuKind::kContainer, false, false)
+		HKS_MENU_HOOKS(Bart, Settings::MenuKind::kContainer, false, false)
 #undef HKS_MENU_HOOKS
 
 		// Favorites: only the PostCreate (inject + setEntry hook) lives here; the

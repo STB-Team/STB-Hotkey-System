@@ -17,6 +17,12 @@ namespace HKS::EquipDispatch
 	// press takes it off.
 	void Fire(std::vector<ItemId> a_items);
 
+	// Which hand(s) the player is holding this form in right now, as a HandMask. Read at
+	// assignment time and stored on the binding, so the hotkey can put the form back where
+	// it was instead of leaving the choice to the engine. kHandNone for anything that is
+	// not in a hand -- armour, ammo, and anything not currently equipped.
+	[[nodiscard]] std::uint8_t CurrentHands(RE::TESForm* a_form);
+
 	// True for forms that go in the Voice slot (shouts and powers/lesser-powers). These
 	// are the ones that can be "equip + instantly cast" via the ShoutHandler hook.
 	[[nodiscard]] bool IsVoiceForm(RE::TESForm* a_form);

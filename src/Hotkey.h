@@ -66,12 +66,23 @@ namespace HKS
 	//   uid    = ExtraUniqueID.uniqueID (0 = none) -- per-save counter
 	//   health = ExtraHealth as fixed-point (temper level; 0 = none)
 	// A plain/fungible item is (form, 0, 0, 0) and matches any plain copy.
+	// Which hand a bind puts its form into, remembered from the moment it was assigned.
+	// Not part of identity -- it is a property of the binding, not of the item.
+	enum HandMask : std::uint8_t
+	{
+		kHandNone = 0,  // wasn't equipped when bound -> let the engine pick, as before
+		kHandRight = 1 << 0,
+		kHandLeft = 1 << 1,
+		kHandBoth = kHandRight | kHandLeft,
+	};
+
 	struct ItemId
 	{
 		RE::FormID    form = 0;
 		RE::FormID    ench = 0;
 		std::uint16_t uid = 0;
 		std::int32_t  health = 0;
+		std::uint8_t  hands = kHandNone;
 
 		[[nodiscard]] explicit operator bool() const { return form != 0; }
 
@@ -84,6 +95,9 @@ namespace HKS
 		// are picked up or used. Matching on it made bindings on looted gear (looted items
 		// carry ExtraUniqueID; crafted ones usually don't) silently stop resolving.
 		// Enchantment/temper are safe: they always force their own single-list row.
+		// `hands` is likewise not compared: re-binding the same item to the same chord has
+		// to keep reading as "the same hotkey" (that is what toggles it off) even when the
+		// player happens to be holding it differently than they were last time.
 		[[nodiscard]] bool Same(const ItemId& a_rhs) const
 		{
 			return form == a_rhs.form && ench == a_rhs.ench && health == a_rhs.health;

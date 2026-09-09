@@ -157,12 +157,20 @@ namespace HKS
 	// run it only if the player confirms.
 	void InputHandler::ApplyAssignment(Bind a_bind, ItemId a_target, bool a_group)
 	{
+		// Snapshot which hand(s) the form is in right now, so the hotkey puts it back there
+		// on every press instead of leaving the choice to the engine -- SkyUI's saved equip
+		// state. Read here, at the moment of assignment, because that is what the player is
+		// looking at; nothing else in the binding changes afterwards.
+		if (Settings::RememberHand()) {
+			a_target.hands = EquipDispatch::CurrentHands(RE::TESForm::LookupByID(a_target.form));
+		}
+
 		auto*      mgr = HotkeyManager::GetSingleton();
 		const auto res = a_group ? mgr->AddToGroup(a_bind, a_target) : mgr->Assign(a_bind, a_target);
-		logger::info("{} chord ({} keys, dev {}) -> form {:08X} ench {:08X} hp {} (result {})",
+		logger::info("{} chord ({} keys, dev {}) -> form {:08X} ench {:08X} hp {} hands {} (result {})",
 			a_group ? "grouped" : "assigned",
 			a_bind.keys.size(), static_cast<int>(a_bind.device), a_target.form, a_target.ench,
-			a_target.health, static_cast<int>(res));
+			a_target.health, a_target.hands, static_cast<int>(res));
 		InventoryIcons::MarkDirty();  // re-stamp menu keycaps (handles displaced bindings)
 		// Favorite it right away (star + shows in Favorites with our badge), like a
 		// vanilla F press. Prefer the game's real-entry path (live refresh); fall back
