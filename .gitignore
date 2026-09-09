@@ -10,6 +10,8 @@ out/
 /Skyui/
 /Untarnished/
 flash/**/build/
+flash/**/work/
+/package/
 
 # Reverse-engineering scratch: Hex-Rays output of SkyrimSE.exe is Bethesda's code.
 /reverse/

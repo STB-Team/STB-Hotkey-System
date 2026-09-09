@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fomod>
+  <Name>STB Hotkey System</Name>
+  <Author>STB</Author>
+  <Version>1.0.0</Version>
+  <Website>https://github.com/STB-Team/STB-Hotkey-System</Website>
+  <Description>
+    Replaces Skyrim's favorites hotkeys with a chord-based system. Bind any item, spell,
+    shout or power to a key from the inventory, magic or favorites menu, stack several
+    items on one key as a group, and see the assigned key drawn on the list row.
+  </Description>
+  <Groups>
+    <element>Gameplay</element>
+    <element>User Interface</element>
+  </Groups>
+</fomod>

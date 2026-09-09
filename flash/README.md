@@ -19,6 +19,13 @@ the `+256 / +266` offsets are hardcoded there.
 
 This is exactly SkyUI's `ButtonArt` layout, so **any SkyUI-derived UI works unmodified**.
 
+Two sets are built this way and ship with the mod:
+
+| set | source | notes |
+|---|---|---|
+| [SkyUI](SkyUI/README.md) | `interface/skyui/buttonart.swf` | the default; a standalone file, two edits |
+| [Untarnished UI](Untarnished/README.md) | `interface/favoritesmenu.swf` | the clip is embedded in a whole menu and has to be cut out |
+
 ## Where the art lives
 
 Vanilla Skyrim has **no keyboard keycap art at all** — it draws hotkeys as text
@@ -39,7 +46,8 @@ You need [JPEXS FFDec](https://github.com/jindrapetrik/jpexs-decompiler) (`ffdec
 FFDec trips over paths containing spaces or brackets — work in a plain temp folder.
 
 **1. Find the clip.** Try the mod's `interface/skyui/buttonart*.swf` first. Otherwise dump
-its `favoritesmenu.swf` and look for the keyboard section:
+its `favoritesmenu.swf` and look for the keyboard section (that is the Untarnished case --
+[`Untarnished/build.py`](Untarnished/build.py) does the whole cut-out end to end):
 
 ```bash
 ffdec-cli -dumpSWF source.swf > tags.txt
@@ -81,6 +89,11 @@ new = body[:p] + tag + body[p:]
 open(DST, "wb").write(b"CWS" + bytes([ver]) + struct.pack("<I", 8 + len(new)) + zlib.compress(new, 9))
 ```
 
+**3b. Cut the clip out, if it came from a whole menu.** Keep only the characters the clip's
+frames place, transitively, and drop the leftover `DoAction` / `ImportAssets` / empty
+`ExportAssets` scaffolding from the main timeline. Worked example with the exact commands
+in [`Untarnished/README.md`](Untarnished/README.md).
+
 **4. Flatten the number keys if needed.** Sets that draw the full US key face show `!1`,
 `@2`, `$4` on the number row. The shifted symbol and the digit are separate shapes, so you
 can blank the symbol and re-centre the digit — worked example with exact character ids in
@@ -102,8 +115,12 @@ The art belongs to whoever made that UI, and terms differ per mod.
 - **SkyUI** allows using and modifying its assets **as long as SkyUI is credited**, and not
   in paid mods. Its "seek permission from Psychosteve and Jelidity" note applies to the
   `icons_*.swf` files, **not** to `buttonart.swf`.
-- **Other overhauls vary.** Untarnished's keycaps, for instance, are not its author's own —
-  they trace back to Dear Diary Dark Mode, i.e. a different author again.
+- **Untarnished UI** allows modifying and redistributing its assets. Credit **Vor/Vorganger**
+  and **uranreactor** — and the **SkyUI Team** as well, because most of that keycap art is
+  not Untarnished's own: byte-identical shapes trace it back through Dear Diary Dark Mode
+  to SkyUI. Don't sell it.
+- **Other overhauls vary**, and a reskin's terms do not cover art it inherited. Hash the
+  shapes against SkyUI's before assuming who you need to credit.
 
 Building a set locally from a UI mod you already have installed is your own business.
 **Redistributing** it is what needs the author's permission. That is why no `.swf` is

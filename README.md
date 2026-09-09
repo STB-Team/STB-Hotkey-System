@@ -2,7 +2,8 @@
 
 An SKSE64 plugin that replaces Skyrim's favorites hotkeys with a chord-based system:
 bind any item, spell, shout or power to a key (optionally a 2-key chord) from the
-inventory, magic or favorites menu, and see the assigned key drawn on the list row.
+inventory, magic or favorites menu, stack several items on one key as a group, and see the
+assigned key drawn on the list row.
 
 Supports **Skyrim SE 1.5.97** and **Skyrim AE 1.7.104**.
 
@@ -16,10 +17,15 @@ truth; nothing is stored on the item, and bindings live in the co-save.
 ## Features
 
 - Chord binds (`modifier + key`, optional 2-key chords), assigned live from the menus.
+- **Groups**: a second modifier stacks items onto one key, and one press equips the whole
+  set — first weapon/spell to the right hand, second to the left, shields and torches left.
 - Keycap drawn on the inventory / magic / favorites rows, positioned after the item name.
 - Instance-aware: an enchanted or tempered copy binds separately from a plain one.
 - Shouts and powers can equip **and** cast on a single press.
 - Bindings survive running out of a consumable — the star is restored when the item comes back.
+- While a modifier is held, menu keys stop doing their menu job, so binding `Ctrl+E` doesn't
+  also equip the item and `Ctrl+R` doesn't drop it.
+- "Assign hotkey" shown among the button hints at the bottom of the item menus.
 - By default, pre-existing vanilla hotkeys are migrated to this system when a save is loaded.
 - Optional warning before assigning a key already used by a gameplay control.
 - English and Russian interface text; additional languages can be added with a translation file.
@@ -37,10 +43,13 @@ cmake --build build --config Release
 Dependencies come from vcpkg (`vcpkg.json`): CommonLibSSE-NG, spdlog, nlohmann_json, xbyak.
 `COPY_BUILD=ON` copies the DLL/PDB to `STB_WIDGETS_DEPLOY_DIR` after a successful build.
 
-The keycap graphic is a separate SWF, not part of the DLL. The default set is built from
-SkyUI's button art; swapping the file restyles every keycap with no rebuild. See
-[`flash/README.md`](flash/README.md) for the frame-layout contract and a step-by-step guide
-to adapting it to another UI overhaul.
+The keycap graphic is a separate SWF, not part of the DLL: swapping the file restyles every
+keycap with no rebuild. Two sets are built here — from SkyUI's button art (the default) and
+from Untarnished UI's. See [`flash/README.md`](flash/README.md) for the frame-layout
+contract and a step-by-step guide to adapting it to another UI overhaul.
+
+`.\package.ps1` stages the FOMOD-installable tree (plugin + INI + translations, then a
+choice of keycap set) into `package/`.
 
 ## Configuration
 
@@ -63,7 +72,9 @@ JerryYOJ has given his permission for this reuse.
 
 - **JerryYOJ** — Dynamic Inventory Icon Injector, the runtime SWF symbol injection.
 - **Vermunds** — Extended Hotkey System, the original inspiration and reference for assigning arbitrary keys from the Favorites menu.
-- **SkyUI Team** — the default keycap art is built from SkyUI's `buttonart.swf`.
+- **SkyUI Team** — the default keycap art is built from SkyUI's `buttonart.swf`, and most
+  of the Untarnished set traces back to it as well.
+- **Vor/Vorganger** and **uranreactor** — Untarnished UI, source of the second keycap set.
 - The SKSE team and the CommonLibSSE-NG contributors.
 
 ## Not redistributed here
