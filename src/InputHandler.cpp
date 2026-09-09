@@ -59,6 +59,7 @@ namespace HKS
 		_msHeld.clear();
 		_padHeld.clear();
 		_capturing = false;
+		_capGroup = false;
 		_capChord.clear();
 		_capDown.clear();
 		_capTarget = {};
@@ -97,12 +98,20 @@ namespace HKS
 		}
 	}
 
-	ItemId InputHandler::ResolveForKey(RE::INPUT_DEVICE a_device, std::uint32_t a_key) const
+	ItemId InputHandler::ResolveVoiceForKey(RE::INPUT_DEVICE a_device, std::uint32_t a_key) const
 	{
 		auto held = const_cast<InputHandler*>(this)->HeldFor(a_device);
 		held.insert(a_key);  // the just-pressed key may not be in the set yet
 		const auto* hk = HotkeyManager::GetSingleton()->ResolveChord(a_device, held, a_key);
-		return hk ? hk->Id() : ItemId{};
+		if (!hk) {
+			return {};
+		}
+		for (const auto& id : hk->items) {
+			if (EquipDispatch::IsVoiceForm(RE::TESForm::LookupByID(id.form))) {
+				return id;
+			}
+		}
+		return {};
 	}
 
 	bool InputHandler::FiringSuppressed()
@@ -150,12 +159,14 @@ namespace HKS
 	// Actually store the binding. Split out of CommitCapture because the key-conflict
 	// prompt is asynchronous: when it fires we hand this to the message box callback and
 	// run it only if the player confirms.
-	void InputHandler::ApplyAssignment(Bind a_bind, ItemId a_target)
+	void InputHandler::ApplyAssignment(Bind a_bind, ItemId a_target, bool a_group)
 	{
-		const auto res = HotkeyManager::GetSingleton()->Assign(a_bind, a_target);
-		logger::info("assigned chord ({} keys, dev {}) -> form {:08X} ench {:08X} uid {} hp {} (result {})",
+		auto*      mgr = HotkeyManager::GetSingleton();
+		const auto res = a_group ? mgr->AddToGroup(a_bind, a_target) : mgr->Assign(a_bind, a_target);
+		logger::info("{} chord ({} keys, dev {}) -> form {:08X} ench {:08X} hp {} (result {})",
+			a_group ? "grouped" : "assigned",
 			a_bind.keys.size(), static_cast<int>(a_bind.device), a_target.form, a_target.ench,
-			a_target.uid, a_target.health, static_cast<int>(res));
+			a_target.health, static_cast<int>(res));
 		InventoryIcons::MarkDirty();  // re-stamp menu keycaps (handles displaced bindings)
 		// Favorite it right away (star + shows in Favorites with our badge), like a
 		// vanilla F press. Prefer the game's real-entry path (live refresh); fall back
@@ -192,11 +203,12 @@ namespace HKS
 
 			if (!clashControl.empty()) {
 				const ItemId target = _capTarget;
+				const bool   group = _capGroup;
 				ShowMessageBox(
 					Localization::Format("$STB_HK_KeyConflict_Body", { clashKey, clashControl }),
-					[bind, target](unsigned int a_button) {
+					[bind, target, group](unsigned int a_button) {
 						if (a_button == 0) {
-							GetSingleton()->ApplyAssignment(bind, target);
+							GetSingleton()->ApplyAssignment(bind, target, group);
 						} else {
 							logger::info("assign cancelled by player (key conflict)");
 						}
@@ -205,7 +217,7 @@ namespace HKS
 						Localization::Get("$STB_HK_KeyConflict_Cancel") });
 				logger::info("key conflict: {} is bound to \"{}\" -- prompting", clashKey, clashControl);
 			} else {
-				ApplyAssignment(bind, _capTarget);
+				ApplyAssignment(bind, _capTarget, _capGroup);
 			}
 		}
 		else if (!_capChord.empty()) {
@@ -240,9 +252,11 @@ namespace HKS
                                               ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME));
 		const bool          assignOpen = MenuAssign::IsAssignMenuOpen() && !blockingOverlay;
 		const std::uint32_t modKey = Settings::AssignModifier();
+		const std::uint32_t groupKey = Settings::GroupModifier();
 
 		if (!assignOpen && _capturing) {  // menu closed mid-capture -> abandon
 			_capturing = false;
+			_capGroup = false;
 			_capChord.clear();
 			_capDown.clear();
 			_capTarget = {};
@@ -269,23 +283,32 @@ namespace HKS
 			// The assign-modifier is a keyboard key; the chord it captures can be keyboard
 			// OR mouse keys (a chord stays single-device, set by its first key).
 			if (assignOpen) {
-				if (device == RE::INPUT_DEVICE::kKeyboard && idCode == modKey) {
-					if (button->IsDown()) {
+				// Two modifiers, same capture machinery: the assign one sets the chord to
+				// the single selected item, the group one stacks the item onto whatever the
+				// chord already holds. Which one opened the session decides for the whole
+				// hold, so the meaning can't change halfway through a bind.
+				const bool isModKey = device == RE::INPUT_DEVICE::kKeyboard &&
+				                      (idCode == modKey || (groupKey != 0 && idCode == groupKey));
+				if (isModKey) {
+					if (button->IsDown() && !_capturing) {
 						// Open a capture session. The target is NOT locked here -- it's
 						// locked at each chord's first key-down (below), so between binds
 						// the selection can move freely (mouse-hover the next item) and you
 						// can bind several items in one modifier hold.
 						_capturing = true;
+						_capGroup = groupKey != 0 && idCode == groupKey && idCode != modKey;
+						_capModKey = idCode;
 						_capChord.clear();
 						_capDown.clear();
 						_capTarget = {};
 						_capDevice = RE::INPUT_DEVICE::kKeyboard;
-					} else if (!pressed && _capturing) {
-						// Modifier released -> commit any pending chord and end the session.
+					} else if (!pressed && _capturing && idCode == _capModKey) {
+						// Session modifier released -> commit any pending chord and close it.
 						CommitCapture();
 						_capturing = false;
+						_capGroup = false;
 					}
-					continue;  // the modifier key never fires a hotkey
+					continue;  // a modifier key never fires a hotkey
 				}
 				if (_capturing && (device == RE::INPUT_DEVICE::kKeyboard || device == RE::INPUT_DEVICE::kMouse)) {
 					if (button->IsDown()) {
@@ -323,18 +346,29 @@ namespace HKS
 
 			// ResolveChord only returns a chord that contains idCode, so the matched bind
 			// is one this keystroke actually completes (an unrelated held/phantom key can't
-			// shadow it and drop the press).
-			const auto* hotkey = HotkeyManager::GetSingleton()->ResolveChord(device, held, idCode);
-			if (hotkey && hotkey->id.form) {
-				// Voice forms (shout/power) are equipped+cast by the ShoutHandler hook,
-				// which runs before this sink, so skip them here to avoid a double
-				// equip that would interrupt the cast.
-				auto* form = RE::TESForm::LookupByID(hotkey->id.form);
-				if (Settings::CastVoiceOnEquip() && EquipDispatch::IsVoiceForm(form)) {
+			// shadow it and drop the press). Copy the members out straight away: the store
+			// is mutated from the menu and main threads, so the pointer must not outlive
+			// this statement.
+			std::vector<ItemId> items;
+			if (const auto* hotkey = HotkeyManager::GetSingleton()->ResolveChord(device, held, idCode)) {
+				items = hotkey->items;
+			}
+			if (items.empty()) {
+				continue;
+			}
+			if (Settings::CastVoiceOnEquip()) {
+				// Voice forms (shout/power) are equipped AND charged by the ShoutHandler
+				// hook, which runs before this sink. Firing them here too would re-equip
+				// mid-charge and cut the cast short. The rest of a group still goes through
+				// here, so "shout + armour" equips the armour and shouts on one press.
+				std::erase_if(items, [](const ItemId& a_id) {
+					return EquipDispatch::IsVoiceForm(RE::TESForm::LookupByID(a_id.form));
+				});
+				if (items.empty()) {
 					continue;
 				}
-				EquipDispatch::Fire(hotkey->Id());
 			}
+			EquipDispatch::Fire(std::move(items));
 		}
 
 		return RE::BSEventNotifyControl::kContinue;

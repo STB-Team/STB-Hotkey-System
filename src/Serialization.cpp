@@ -33,17 +33,72 @@ namespace HKS::Serialization
 
 		for (const auto& h : hotkeys) {
 			Write<std::uint32_t>(a_intfc, static_cast<std::uint32_t>(h.bind.device));
-			Write<RE::FormID>(a_intfc, h.id.form);
-			Write<RE::FormID>(a_intfc, h.id.ench);
-			Write<std::uint16_t>(a_intfc, h.id.uid);
-			Write<std::int32_t>(a_intfc, h.id.health);
 			Write<std::uint32_t>(a_intfc, static_cast<std::uint32_t>(h.bind.keys.size()));
 			for (auto k : h.bind.keys) {
 				Write<std::uint32_t>(a_intfc, k);
 			}
+			Write<std::uint32_t>(a_intfc, static_cast<std::uint32_t>(h.items.size()));
+			for (const auto& id : h.items) {
+				Write<RE::FormID>(a_intfc, id.form);
+				Write<RE::FormID>(a_intfc, id.ench);
+				Write<std::uint16_t>(a_intfc, id.uid);
+				Write<std::int32_t>(a_intfc, id.health);
+			}
 		}
 
 		logger::info("saved {} hotkeys", hotkeys.size());
+	}
+
+	namespace
+	{
+		// Resolve one saved item identity across the current load order. Returns false when
+		// the source plugin is gone -- that item is dropped, never the whole record.
+		bool ResolveItem(SKSE::SerializationInterface* a_intfc, const ItemId& a_saved, ItemId& a_out)
+		{
+			RE::FormID resolved = 0;
+			if (!a_intfc->ResolveFormID(a_saved.form, resolved)) {
+				logger::warn("could not resolve form {:08X}, dropping item", a_saved.form);
+				return false;
+			}
+			if (!RE::TESForm::LookupByID(resolved)) {
+				logger::warn("form {:08X} not found, dropping item", resolved);
+				return false;
+			}
+			// The enchantment is a FormID too. uid is a per-save counter and health a
+			// fixed-point value -- both kept verbatim.
+			RE::FormID resolvedEnch = 0;
+			if (a_saved.ench != 0) {
+				a_intfc->ResolveFormID(a_saved.ench, resolvedEnch);
+			}
+			a_out = ItemId{ resolved, resolvedEnch, a_saved.uid, a_saved.health };
+			return true;
+		}
+
+		bool ReadItem(SKSE::SerializationInterface* a_intfc, ItemId& a_out)
+		{
+			return Read(a_intfc, a_out.form) && Read(a_intfc, a_out.ench) &&
+			       Read(a_intfc, a_out.uid) && Read(a_intfc, a_out.health);
+		}
+
+		bool ReadBind(SKSE::SerializationInterface* a_intfc, Bind& a_out)
+		{
+			std::uint32_t deviceRaw = 0;
+			std::uint32_t nKeys = 0;
+			if (!Read(a_intfc, deviceRaw) || !Read(a_intfc, nKeys)) {
+				return false;
+			}
+			a_out.device = static_cast<RE::INPUT_DEVICE>(deviceRaw);
+			a_out.keys.reserve(nKeys);
+			for (std::uint32_t k = 0; k < nKeys; ++k) {
+				std::uint32_t key = 0;
+				if (!Read(a_intfc, key)) {
+					return false;
+				}
+				a_out.keys.push_back(key);
+			}
+			a_out.Canonicalize();
+			return true;
+		}
 	}
 
 	void LoadCallback(SKSE::SerializationInterface* a_intfc)
@@ -59,8 +114,9 @@ namespace HKS::Serialization
 				logger::warn("unknown co-save record {:08X}, skipping", type);
 				continue;
 			}
-			if (version != kVersion) {
-				logger::warn("HOTK version {} != {}, ignoring", version, kVersion);
+			if (version != kVersion && version != kVersionSingleItem) {
+				logger::warn("HOTK version {} is not readable (expected {} or {}), ignoring",
+					version, kVersion, kVersionSingleItem);
 				continue;
 			}
 
@@ -72,64 +128,80 @@ namespace HKS::Serialization
 
 			loaded.reserve(count);
 			for (std::uint32_t i = 0; i < count; ++i) {
-				std::uint32_t deviceRaw = 0;
-				RE::FormID    savedForm = 0;
-				RE::FormID    savedEnch = 0;
-				std::uint16_t savedUid = 0;
-				std::int32_t  savedHealth = 0;
-				std::uint32_t nKeys = 0;
+				Bind                bind;
+				std::vector<ItemId> saved;
 
-				if (!Read(a_intfc, deviceRaw) || !Read(a_intfc, savedForm) ||
-					!Read(a_intfc, savedEnch) || !Read(a_intfc, savedUid) || !Read(a_intfc, savedHealth) ||
-					!Read(a_intfc, nKeys)) {
-					logger::error("truncated hotkey #{}", i);
-					break;
-				}
-
-				Bind bind;
-				bind.device = static_cast<RE::INPUT_DEVICE>(deviceRaw);
-				bind.keys.reserve(nKeys);
-				bool keysOk = true;
-				for (std::uint32_t k = 0; k < nKeys; ++k) {
-					std::uint32_t key = 0;
-					if (!Read(a_intfc, key)) {
-						keysOk = false;
+				if (version == kVersionSingleItem) {
+					// v3 layout: device, one item, then the chord.
+					std::uint32_t deviceRaw = 0;
+					ItemId        one;
+					std::uint32_t nKeys = 0;
+					if (!Read(a_intfc, deviceRaw) || !ReadItem(a_intfc, one) || !Read(a_intfc, nKeys)) {
+						logger::error("truncated hotkey #{}", i);
 						break;
 					}
-					bind.keys.push_back(key);
-				}
-				if (!keysOk) {
-					logger::error("truncated chord on hotkey #{}", i);
-					break;
-				}
-				bind.Canonicalize();
-
-				// Resolve the form across the loaded plugin list. If the source mod
-				// is gone or the id no longer resolves, drop just this hotkey -- never
-				// fail the whole load (that is how the reference mod wiped everything).
-				RE::FormID resolved = 0;
-				if (!a_intfc->ResolveFormID(savedForm, resolved)) {
-					logger::warn("could not resolve form {:08X}, dropping hotkey", savedForm);
-					continue;
-				}
-				auto* form = RE::TESForm::LookupByID(resolved);
-				if (!form) {
-					logger::warn("form {:08X} not found, dropping hotkey", resolved);
-					continue;
-				}
-
-				// The enchantment is a FormID too; resolve it across the load order. uid is
-				// a per-save counter and health a fixed-point value -- kept verbatim.
-				RE::FormID resolvedEnch = 0;
-				if (savedEnch != 0) {
-					a_intfc->ResolveFormID(savedEnch, resolvedEnch);
+					bind.device = static_cast<RE::INPUT_DEVICE>(deviceRaw);
+					bool keysOk = true;
+					for (std::uint32_t k = 0; k < nKeys; ++k) {
+						std::uint32_t key = 0;
+						if (!Read(a_intfc, key)) {
+							keysOk = false;
+							break;
+						}
+						bind.keys.push_back(key);
+					}
+					if (!keysOk) {
+						logger::error("truncated chord on hotkey #{}", i);
+						break;
+					}
+					bind.Canonicalize();
+					saved.push_back(one);
+				} else {
+					if (!ReadBind(a_intfc, bind)) {
+						logger::error("truncated chord on hotkey #{}", i);
+						break;
+					}
+					std::uint32_t nItems = 0;
+					if (!Read(a_intfc, nItems)) {
+						logger::error("truncated item count on hotkey #{}", i);
+						break;
+					}
+					bool itemsOk = true;
+					saved.reserve(nItems);
+					for (std::uint32_t n = 0; n < nItems; ++n) {
+						ItemId id;
+						if (!ReadItem(a_intfc, id)) {
+							itemsOk = false;
+							break;
+						}
+						saved.push_back(id);
+					}
+					if (!itemsOk) {
+						logger::error("truncated items on hotkey #{}", i);
+						break;
+					}
 				}
 
 				if (!bind.IsValid()) {
 					continue;
 				}
 
-				loaded.push_back(Hotkey{ std::move(bind), ItemId{ resolved, resolvedEnch, savedUid, savedHealth } });
+				// Resolve each member. A member whose plugin is gone is dropped on its own;
+				// only a chord left with nothing goes away entirely. Never fail the whole
+				// load over one bad form -- that is how the reference mod wiped everything.
+				std::vector<ItemId> items;
+				items.reserve(saved.size());
+				for (const auto& id : saved) {
+					ItemId resolved;
+					if (ResolveItem(a_intfc, id, resolved)) {
+						items.push_back(resolved);
+					}
+				}
+				if (items.empty()) {
+					continue;
+				}
+
+				loaded.push_back(Hotkey{ std::move(bind), std::move(items) });
 			}
 		}
 

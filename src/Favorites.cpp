@@ -236,34 +236,38 @@ namespace HKS::Favorites
 		auto* mgr = HotkeyManager::GetSingleton();
 		bool  changed = false;
 		for (const auto& h : mgr->Snapshot()) {
-			{
-				std::scoped_lock lk(g_pendingLock);
-				if (g_pendingFavorite.contains(h.id.form)) {
-					continue;  // auto-favorite from a fresh assignment still in flight
+			// Members are judged one at a time: un-favoriting one piece of a group should
+			// take that piece out and leave the rest of the loadout alone.
+			for (const auto& id : h.items) {
+				{
+					std::scoped_lock lk(g_pendingLock);
+					if (g_pendingFavorite.contains(id.form)) {
+						continue;  // auto-favorite from a fresh assignment still in flight
+					}
 				}
-			}
-			if (WithinFavoriteGrace(h.id.form)) {
-				continue;  // just favorited -- let the list settle before judging it
-			}
-
-			const auto state = Query(h.id.form);
-			if (state == State::kAbsent) {
-				// Out of stock, not un-favorited: keep the binding. PickupWatch re-favorites
-				// the form when it returns. Logged once per transition so the per-frame
-				// prune doesn't spam.
-				if (g_absentLogged.insert(h.id.form).second && Settings::DebugLog()) {
-					logger::info("hotkey {:08X}: none held -> binding KEPT (waiting for pickup)",
-						h.id.form);
+				if (WithinFavoriteGrace(id.form)) {
+					continue;  // just favorited -- let the list settle before judging it
 				}
-				continue;
-			}
-			g_absentLogged.erase(h.id.form);
 
-			if (state == State::kUnfavorited) {
-				mgr->RemoveByItem(h.id);
-				logger::info("pruned hotkey {:08X} ench {:08X} hp {} (un-favorited by player)",
-					h.id.form, h.id.ench, h.id.health);
-				changed = true;
+				const auto state = Query(id.form);
+				if (state == State::kAbsent) {
+					// Out of stock, not un-favorited: keep the binding. PickupWatch
+					// re-favorites the form when it returns. Logged once per transition so
+					// the per-frame prune doesn't spam.
+					if (g_absentLogged.insert(id.form).second && Settings::DebugLog()) {
+						logger::info("hotkey {:08X}: none held -> binding KEPT (waiting for pickup)",
+							id.form);
+					}
+					continue;
+				}
+				g_absentLogged.erase(id.form);
+
+				if (state == State::kUnfavorited) {
+					mgr->RemoveByItem(id);
+					logger::info("pruned hotkey {:08X} ench {:08X} hp {} (un-favorited by player)",
+						id.form, id.ench, id.health);
+					changed = true;
+				}
 			}
 		}
 		return changed;

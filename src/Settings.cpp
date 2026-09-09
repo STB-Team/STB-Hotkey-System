@@ -18,7 +18,12 @@ namespace HKS
 		_assignModifier = static_cast<std::uint32_t>(
 			ini.GetLongValue("Assignment", "iModifierScanCode", static_cast<long>(_assignModifier)));
 
+		_groupModifier = static_cast<std::uint32_t>(
+			ini.GetLongValue("Assignment", "iGroupModifierScanCode", static_cast<long>(_groupModifier)));
+
 		_enableChords = ini.GetBoolValue("Assignment", "bEnableChords", _enableChords);
+
+		_blockMenuKeys = ini.GetBoolValue("Assignment", "bBlockMenuKeys", _blockMenuKeys);
 
 		_warnKeyConflict = ini.GetBoolValue("Assignment", "bWarnKeyConflict", _warnKeyConflict);
 
@@ -40,8 +45,8 @@ namespace HKS
 		_iconXFav = static_cast<float>(ini.GetDoubleValue("IconsFavorites", "fX", _iconX));
 		_iconGapFav = static_cast<float>(ini.GetDoubleValue("IconsFavorites", "fGap", _iconGap));
 
-		logger::info("settings loaded: modifier=0x{:X} chords={} afterName={} scale={} Y={} X={}/{}/{} gap={}/{}/{}",
-			_assignModifier, _enableChords, _iconAfterName, _iconScale, _iconY,
+		logger::info("settings loaded: modifier=0x{:X} group=0x{:X} blockMenuKeys={} chords={} afterName={} scale={} Y={} X={}/{}/{} gap={}/{}/{}",
+			_assignModifier, _groupModifier, _blockMenuKeys, _enableChords, _iconAfterName, _iconScale, _iconY,
 			_iconX, _iconXMagic, _iconXFav, _iconGap, _iconGapMagic, _iconGapFav);
 	}
 }

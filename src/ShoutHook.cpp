@@ -39,8 +39,8 @@ namespace HKS
 				// voice bind fires straight through the ShoutHandler in dialogue and other
 				// menus (vanilla would have refused; our hook runs before that check).
 				if (button->IsDown() && !InputHandler::FiringSuppressed()) {
-					const auto target = InputHandler::GetSingleton()->ResolveForKey(device, id);
-					if (target && EquipDispatch::IsVoiceForm(RE::TESForm::LookupByID(target.form))) {
+					const auto target = InputHandler::GetSingleton()->ResolveVoiceForKey(device, id);
+					if (target) {
 						// Only claim the press if something was actually equipped. A power the
 						// player has lost (perk/quest removed it) equips nothing -- claiming the
 						// key anyway would hand the press to the ShoutHandler, which would then

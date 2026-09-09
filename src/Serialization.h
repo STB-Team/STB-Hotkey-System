@@ -4,7 +4,11 @@ namespace HKS::Serialization
 {
 	inline constexpr std::uint32_t kUniqueID = 'HKSY';  // co-save owner id
 	inline constexpr std::uint32_t kRecordHotkeys = 'HOTK';
-	inline constexpr std::uint32_t kVersion = 3;  // v3: instance identity (ench+uid+health)
+	// v3: one item per chord, written as (device, form, ench, uid, health, keys).
+	// v4: a chord holds a LIST of items (groups), written as (device, keys, items).
+	// v3 records are still read so existing saves keep their hotkeys.
+	inline constexpr std::uint32_t kVersion = 4;
+	inline constexpr std::uint32_t kVersionSingleItem = 3;
 
 	void Register();  // call once from SKSEPlugin_Load
 

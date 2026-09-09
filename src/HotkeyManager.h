@@ -15,28 +15,37 @@ namespace HKS
 	public:
 		enum class AssignResult
 		{
-			kAdded,     // new chord bound to the form
-			kReplaced,  // form/chord re-pointed
-			kRemoved,   // same chord+form pressed again -> toggled off
+			kAdded,     // the item is now on this chord
+			kReplaced,  // it was on another chord (or this chord held something else) and moved
+			kRemoved,   // same chord + same item again -> toggled off
 		};
 
 		static HotkeyManager* GetSingleton();
 
-		// Assign an item identity to `a_bind`. Toggle semantics: bind already points at
-		// this exact item -> remove it (kRemoved); otherwise drop any hotkey on this bind
-		// AND any hotkey on this item, then add it (kAdded / kReplaced). One chord <-> one
-		// item.
+		// Bind `a_bind` to exactly this one item. Toggle semantics: the chord already holds
+		// this item and nothing else -> remove it (kRemoved); otherwise drop whatever the
+		// chord held, take the item off any other chord, and set it (kAdded / kReplaced).
 		AssignResult Assign(const Bind& a_bind, const ItemId& a_id);
 
+		// Stack the item onto whatever `a_bind` already holds, turning the chord into a
+		// group that equips as a set. Already a member -> drop it from the group instead
+		// (kRemoved), so the same keystroke both adds and removes. An item can only live on
+		// one chord, so it is taken off its previous one (kReplaced).
+		AssignResult AddToGroup(const Bind& a_bind, const ItemId& a_id);
+
 		bool RemoveByBind(const Bind& a_bind);
+
+		// Drop the item from whichever chord holds it; a chord left with no items goes too.
 		bool RemoveByItem(const ItemId& a_id);
 
-		// Exact identity lookup (form + ench + uid + health all equal).
+		// Exact identity lookup (form + ench + health all equal) across every group member.
 		[[nodiscard]] const Hotkey* FindByItem(const ItemId& a_id) const;
 
 		// Match by base form only (any instance). Used where the list only ever shows the
 		// bound instance anyway (Favorites menu), so instance data isn't needed.
 		[[nodiscard]] const Hotkey* FindByForm(RE::FormID a_form) const;
+
+		[[nodiscard]] const Hotkey* FindByBind(const Bind& a_bind) const;
 
 		// Longest-match resolution: among hotkeys whose device matches and whose whole
 		// chord is currently held, return the one with the most keys (so "G" never

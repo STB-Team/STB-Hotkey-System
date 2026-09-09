@@ -18,6 +18,19 @@ namespace HKS
 		// the new modifier takes effect without a reload.
 		static void SetAssignModifier(std::uint32_t a_code) { _assignModifier = a_code; }
 
+		// Second modifier: held instead of the assign one, a keypress ADDS the selected
+		// item to whatever that key already holds, building a group that equips as a set
+		// (SkyUI's item groups). Pressing it again on a member removes that member.
+		// 0 disables groups entirely. Default 0x2A (Left Shift).
+		static std::uint32_t GroupModifier() { return _groupModifier; }
+		static void          SetGroupModifier(std::uint32_t a_code) { _groupModifier = a_code; }
+
+		// While an assign modifier is held in an item menu, withhold menu keys from the
+		// menu itself, so binding Ctrl+E doesn't also equip the item, Ctrl+R doesn't drop
+		// it and Ctrl+F doesn't un-favorite it. The cancel control is always let through
+		// so the menu stays closeable. See MenuInputBlock.
+		static bool BlockMenuKeys() { return _blockMenuKeys; }
+
 		// Allow 2-key chords when assigning.
 		//   true  -> a single key commits on modifier RELEASE (so you can still add a 2nd
 		//            key); a 2nd key commits the chord instantly on its press.
@@ -83,6 +96,8 @@ namespace HKS
 
 	private:
 		static inline std::uint32_t _assignModifier = 0x1D;
+		static inline std::uint32_t _groupModifier = 0x2A;
+		static inline bool          _blockMenuKeys = true;
 		static inline bool          _enableChords = true;
 		static inline bool          _castVoiceOnEquip = true;
 		static inline bool          _migrateVanillaHotkeys = true;

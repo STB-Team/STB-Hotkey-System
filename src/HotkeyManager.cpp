@@ -8,25 +8,74 @@ namespace HKS
 		return &singleton;
 	}
 
+	namespace
+	{
+		// Take the item off every chord that holds it, dropping any chord left empty.
+		// One item lives on exactly one chord: two keycaps on one row would be ambiguous,
+		// and "which key does this equip" has to have a single answer.
+		bool DetachItem(std::vector<Hotkey>& a_hotkeys, const ItemId& a_id)
+		{
+			bool removed = false;
+			for (auto& h : a_hotkeys) {
+				const auto before = h.items.size();
+				std::erase_if(h.items, [&](const ItemId& i) { return i.Same(a_id); });
+				removed = removed || h.items.size() != before;
+			}
+			std::erase_if(a_hotkeys, [](const Hotkey& h) { return h.items.empty(); });
+			return removed;
+		}
+	}
+
 	HotkeyManager::AssignResult HotkeyManager::Assign(const Bind& a_bind, const ItemId& a_id)
 	{
 		std::scoped_lock lk(_lock);
 
-		// Same chord already bound to the same exact item -> toggle off.
+		// Same chord, and it already holds just this item -> toggle off.
 		for (auto it = _hotkeys.begin(); it != _hotkeys.end(); ++it) {
-			if (it->bind == a_bind && it->id.Same(a_id)) {
+			if (it->bind == a_bind && it->items.size() == 1 && it->items.front().Same(a_id)) {
 				_hotkeys.erase(it);
 				return AssignResult::kRemoved;
 			}
 		}
 
-		const bool replacing =
-			std::erase_if(_hotkeys, [&](const Hotkey& h) {
-				return h.bind == a_bind || h.id.Same(a_id);
-			}) > 0;
+		// A plain assignment replaces the chord wholesale -- including a group that was
+		// built on it. That is the escape hatch: Ctrl+K on one item resets K to that item.
+		bool replacing = std::erase_if(_hotkeys, [&](const Hotkey& h) { return h.bind == a_bind; }) > 0;
+		replacing = DetachItem(_hotkeys, a_id) || replacing;
 
-		_hotkeys.push_back(Hotkey{ a_bind, a_id });
+		_hotkeys.push_back(Hotkey{ a_bind, { a_id } });
 		return replacing ? AssignResult::kReplaced : AssignResult::kAdded;
+	}
+
+	HotkeyManager::AssignResult HotkeyManager::AddToGroup(const Bind& a_bind, const ItemId& a_id)
+	{
+		std::scoped_lock lk(_lock);
+
+		for (auto it = _hotkeys.begin(); it != _hotkeys.end(); ++it) {
+			if (it->bind != a_bind || !it->Has(a_id)) {
+				continue;
+			}
+			// Already a member -> the same keystroke takes it back out.
+			std::erase_if(it->items, [&](const ItemId& i) { return i.Same(a_id); });
+			if (it->items.empty()) {
+				_hotkeys.erase(it);
+			}
+			return AssignResult::kRemoved;
+		}
+
+		const bool moved = DetachItem(_hotkeys, a_id);
+
+		// DetachItem may have deleted the target chord (if the item was its only member),
+		// so look it up again rather than caching the iterator.
+		for (auto& h : _hotkeys) {
+			if (h.bind == a_bind) {
+				h.items.push_back(a_id);
+				return moved ? AssignResult::kReplaced : AssignResult::kAdded;
+			}
+		}
+
+		_hotkeys.push_back(Hotkey{ a_bind, { a_id } });
+		return moved ? AssignResult::kReplaced : AssignResult::kAdded;
 	}
 
 	bool HotkeyManager::RemoveByBind(const Bind& a_bind)
@@ -38,14 +87,14 @@ namespace HKS
 	bool HotkeyManager::RemoveByItem(const ItemId& a_id)
 	{
 		std::scoped_lock lk(_lock);
-		return std::erase_if(_hotkeys, [&](const Hotkey& h) { return h.id.Same(a_id); }) > 0;
+		return DetachItem(_hotkeys, a_id);
 	}
 
 	const Hotkey* HotkeyManager::FindByItem(const ItemId& a_id) const
 	{
 		std::scoped_lock lk(_lock);
 		for (const auto& h : _hotkeys) {
-			if (h.id.Same(a_id)) {
+			if (h.Has(a_id)) {
 				return &h;
 			}
 		}
@@ -56,7 +105,18 @@ namespace HKS
 	{
 		std::scoped_lock lk(_lock);
 		for (const auto& h : _hotkeys) {
-			if (h.id.form == a_form) {
+			if (h.HasForm(a_form)) {
+				return &h;
+			}
+		}
+		return nullptr;
+	}
+
+	const Hotkey* HotkeyManager::FindByBind(const Bind& a_bind) const
+	{
+		std::scoped_lock lk(_lock);
+		for (const auto& h : _hotkeys) {
+			if (h.bind == a_bind) {
 				return &h;
 			}
 		}

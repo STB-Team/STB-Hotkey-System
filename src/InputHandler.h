@@ -39,10 +39,12 @@ namespace HKS
 		// drags in unresolved NG symbols).
 		[[nodiscard]] bool IsHeld(RE::INPUT_DEVICE a_device, std::uint32_t a_key) const;
 
-		// Resolve the hotkey for "the chord currently held plus a_key". Used by the
-		// ShoutHandler hook (which runs before this sink) to decide if a keypress is a
-		// voice hotkey. Returns the bound item identity (form 0 if none).
-		[[nodiscard]] ItemId ResolveForKey(RE::INPUT_DEVICE a_device, std::uint32_t a_key) const;
+		// Resolve the hotkey for "the chord currently held plus a_key" and return its VOICE
+		// member -- the shout or power, if the bind holds one (form 0 otherwise). Used by
+		// the ShoutHandler hook, which runs before this sink, to decide whether a keypress
+		// should charge a shout. A group can hold at most one voice form (there is only one
+		// voice slot), so the first match is the answer.
+		[[nodiscard]] ItemId ResolveVoiceForKey(RE::INPUT_DEVICE a_device, std::uint32_t a_key) const;
 
 		// True when a hotkey must NOT fire (paused, an assign/item/dialogue/etc. menu
 		// owns input). Shared with the ShoutHook so voice forms obey the same rules.
@@ -65,8 +67,9 @@ namespace HKS
 
 		// Store one binding (assign + auto-favorite). Separate from CommitCapture because
 		// the key-conflict prompt is asynchronous: on a clash this is deferred into the
-		// message box callback and only runs if the player confirms.
-		void ApplyAssignment(Bind a_bind, ItemId a_target);
+		// message box callback and only runs if the player confirms. a_group picks which
+		// modifier's meaning applies: replace the chord, or stack onto it.
+		void ApplyAssignment(Bind a_bind, ItemId a_target, bool a_group);
 
 		std::unordered_set<std::uint32_t> _kbHeld;
 		std::unordered_set<std::uint32_t> _msHeld;
@@ -79,6 +82,13 @@ namespace HKS
 		// modifier between them. The target is locked at each chord's first key-down.
 		static constexpr std::size_t      kMaxChord = 2;
 		bool                              _capturing = false;
+		// Which modifier opened the session: the group one stacks the item onto whatever
+		// the chord already holds instead of replacing it. Fixed for the whole session, so
+		// swapping modifiers mid-hold can't half-apply.
+		bool                              _capGroup = false;
+		// The modifier that opened the session. Only ITS release ends the session, so
+		// pressing the other modifier mid-hold can't cut the current one short.
+		std::uint32_t                     _capModKey = 0;
 		ItemId                            _capTarget;  // locked at the pending chord's first key
 		RE::INPUT_DEVICE                  _capDevice = RE::INPUT_DEVICE::kKeyboard;
 		std::unordered_set<std::uint32_t> _capChord;  // keys accumulated for the pending bind

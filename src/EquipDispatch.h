@@ -2,14 +2,19 @@
 
 #include "Hotkey.h"
 
+#include <vector>
+
 namespace HKS::EquipDispatch
 {
-	// Equip/toggle the form bound to a hotkey. Safe to call from the input thread:
-	// the actual work is re-resolved by FormID and run on the main thread via the
-	// SKSE task queue. We never carry a raw ExtraDataList pointer across the queue
-	// (that pointer can be freed when stacks are re-split -- the reference mod's
-	// deferred-equip use-after-free crash).
-	void Fire(const ItemId& a_id);
+	// Act on the items bound to one hotkey. Safe to call from the input thread: the work
+	// is re-resolved by FormID and run on the main thread via the SKSE task queue. We never
+	// carry a raw ExtraDataList pointer across the queue (that pointer can be freed when
+	// stacks are re-split -- the reference mod's deferred-equip use-after-free crash).
+	//
+	// One item keeps the vanilla-favourites feel: press to equip, press again to put away.
+	// Several items are a group and equip as a set -- hand items are dealt out in order
+	// (first to the right hand, second to the left) and nothing is ever toggled off.
+	void Fire(std::vector<ItemId> a_items);
 
 	// True for forms that go in the Voice slot (shouts and powers/lesser-powers). These
 	// are the ones that can be "equip + instantly cast" via the ShoutHandler hook.

@@ -15,6 +15,7 @@ using namespace RE;
 #include "InputHandler.h"
 #include "InventoryIcons.h"
 #include "Localization.h"
+#include "MenuInputBlock.h"
 #include "ModifierConflict.h"
 #include "PickupWatch.h"
 #include "Serialization.h"
@@ -33,6 +34,7 @@ static void SKSEMessageHandler(SKSE::MessagingInterface::Message* message)
 			HKS::InventoryIcons::LoadResources();
 			HKS::InventoryIcons::Install();
 			HKS::ShoutHook::Install();
+			HKS::MenuInputBlock::Install();
 			HKS::InputHandler::Register();
 			HKS::PickupWatch::Register();
 		}

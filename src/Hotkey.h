@@ -90,12 +90,34 @@ namespace HKS
 		}
 	};
 
+	// One chord -> one or more items.
+	//
+	// A plain hotkey holds exactly one item and keeps the old toggle behaviour (press to
+	// equip, press again to put away). Two or more items make it a GROUP: one press equips
+	// the whole set, the way SkyUI's item groups do, and nothing is ever toggled off -- a
+	// group is a loadout, and "press again to unequip half of it" is not useful.
+	//
+	// Order matters. Hand items are handed out in the order they were added: the first
+	// weapon/spell takes the right hand, the second the left. That is also the order the
+	// player built the group in, so it is predictable without any extra UI.
 	struct Hotkey
 	{
-		Bind   bind;
-		ItemId id;
+		Bind                bind;
+		std::vector<ItemId> items;
 
-		[[nodiscard]] const ItemId& Id() const { return id; }
+		[[nodiscard]] bool IsGroup() const { return items.size() > 1; }
+
+		[[nodiscard]] bool Has(const ItemId& a_id) const
+		{
+			return std::any_of(items.begin(), items.end(),
+				[&](const ItemId& i) { return i.Same(a_id); });
+		}
+
+		[[nodiscard]] bool HasForm(RE::FormID a_form) const
+		{
+			return std::any_of(items.begin(), items.end(),
+				[&](const ItemId& i) { return i.form == a_form; });
+		}
 	};
 
 	// Read the instance identity from one inventory row's entry data. Reads ench/uid/

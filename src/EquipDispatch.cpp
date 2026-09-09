@@ -4,6 +4,9 @@
 #include "HotkeyManager.h"
 #include "Settings.h"
 
+#include <utility>
+#include <vector>
+
 namespace HKS::EquipDispatch
 {
 	namespace
@@ -272,6 +275,120 @@ namespace HKS::EquipDispatch
 				break;
 			}
 		}
+
+		// Slots a group member can claim. Tracked per hand rather than as a count so a
+		// shield or torch (which can only go left) doesn't consume the right hand.
+		struct Hands
+		{
+			bool right = false;
+			bool left = false;
+		};
+
+		// Equip one member of a group. No toggling: a group press means "put this loadout
+		// on", so an item already worn is simply left alone by the engine. Hand items take
+		// the right hand first, then the left, in the order the player added them.
+		void EquipGroupMember(RE::PlayerCharacter* a_player, RE::ActorEquipManager* a_em,
+			const ItemId& a_id, Hands& a_hands)
+		{
+			constexpr RE::FormID kRight = 0x13F42;
+			constexpr RE::FormID kLeft = 0x13F43;
+			constexpr RE::FormID kBoth = 0x13F45;
+
+			auto* form = RE::TESForm::LookupByID(a_id.form);
+			if (!form) {
+				return;
+			}
+
+			// Voice forms never touch the hands.
+			if (auto* shout = form->As<RE::TESShout>()) {
+				a_em->EquipShout(a_player, shout);
+				return;
+			}
+			if (auto* spell = form->As<RE::SpellItem>()) {
+				if (IsVoiceForm(form)) {
+					a_em->EquipSpell(a_player, spell, spell->GetEquipSlot());
+					return;
+				}
+				// Compare the equip-slot POINTER rather than calling IsTwoHanded(): a broken
+				// or custom spell can carry a dangling slot pointer.
+				if (spell->GetEquipSlot() && spell->GetEquipSlot() == EquipSlot(kBoth)) {
+					a_em->EquipSpell(a_player, spell, EquipSlot(kBoth));
+					a_hands.right = a_hands.left = true;
+				} else if (!a_hands.right) {
+					a_em->EquipSpell(a_player, spell, EquipSlot(kRight));
+					a_hands.right = true;
+				} else if (!a_hands.left) {
+					a_em->EquipSpell(a_player, spell, EquipSlot(kLeft));
+					a_hands.left = true;
+				}
+				return;
+			}
+
+			auto* bound = form->As<RE::TESBoundObject>();
+			if (!bound) {
+				return;
+			}
+			// Pick the exact instance the bind points at (enchanted/tempered copy); null for
+			// a fungible bind, which lets the engine take any copy.
+			auto* xl = FindInstanceList(bound, a_id);
+
+			if (auto* weap = form->As<RE::TESObjectWEAP>()) {
+				const bool oneHanded = weap->IsOneHandedSword() || weap->IsOneHandedDagger() ||
+				                       weap->IsOneHandedAxe() || weap->IsOneHandedMace() || weap->IsStaff();
+				if (!oneHanded) {  // greatsword, bow, crossbow -- takes everything
+					a_em->EquipObject(a_player, bound, xl);
+					a_hands.right = a_hands.left = true;
+				} else if (!a_hands.right) {
+					a_em->EquipObject(a_player, bound, xl, 1, EquipSlot(kRight));
+					a_hands.right = true;
+				} else if (!a_hands.left) {
+					a_em->EquipObject(a_player, bound, xl, 1, EquipSlot(kLeft));
+					a_hands.left = true;
+				}
+				return;
+			}
+
+			// Shields and torches are left-hand only; they must not eat the right hand, so a
+			// group of "shield, sword" still puts the sword where it belongs.
+			auto*      armo = form->As<RE::TESObjectARMO>();
+			const bool leftOnly = (armo && armo->IsShield()) || form->Is(RE::FormType::Light);
+			if (leftOnly) {
+				if (!a_hands.left) {
+					a_em->EquipObject(a_player, bound, xl);
+					a_hands.left = true;
+				}
+				return;
+			}
+
+			// A scroll is cast from a hand like a spell.
+			if (form->Is(RE::FormType::Scroll)) {
+				if (!a_hands.right) {
+					a_em->EquipObject(a_player, bound, xl, 1, EquipSlot(kRight));
+					a_hands.right = true;
+				} else if (!a_hands.left) {
+					a_em->EquipObject(a_player, bound, xl, 1, EquipSlot(kLeft));
+					a_hands.left = true;
+				}
+				return;
+			}
+
+			// Armour, ammo, potions, food -- no hand bookkeeping. Potions and food are
+			// consumed here, which is what a group like "armour + healing potion" is for.
+			a_em->EquipObject(a_player, bound, xl);
+		}
+
+		void EquipSet(const std::vector<ItemId>& a_items)
+		{
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			auto* em = RE::ActorEquipManager::GetSingleton();
+			if (!player || !em) {
+				return;
+			}
+			Hands hands;
+			for (const auto& id : a_items) {
+				EquipGroupMember(player, em, id, hands);
+			}
+		}
 	}
 
 	bool IsVoiceForm(RE::TESForm* a_form)
@@ -289,36 +406,51 @@ namespace HKS::EquipDispatch
 		return false;
 	}
 
-	void Fire(const ItemId& a_id)
+	void Fire(std::vector<ItemId> a_items)
 	{
-		if (!a_id) {
+		if (a_items.empty()) {
 			return;
 		}
 		auto* task = SKSE::GetTaskInterface();
 		if (!task) {
 			return;
 		}
-		task->AddTask([a_id]() {
-			const auto state = Favorites::Query(a_id.form);
-			if (state == Favorites::State::kUnfavorited) {
-				// Player un-favorited it (vanilla F) -> the hotkey is gone.
-				HotkeyManager::GetSingleton()->RemoveByItem(a_id);
-				logger::info("fire {:08X}: un-favorited -> binding removed", a_id.form);
-				return;
-			}
-			if (state == Favorites::State::kAbsent) {
-				// Out of stock (drank the last potion, sold the gear). Keep the binding --
-				// PickupWatch restores the star when the item comes back.
-				if (Settings::DebugLog()) {
-					logger::info("fire {:08X}: none held -> nothing to equip, binding kept", a_id.form);
+		task->AddTask([items = std::move(a_items)]() {
+			// Reconcile before equipping. An item the player un-favorited loses its place in
+			// the bind; one they merely ran out of keeps it (PickupWatch restores the star
+			// when it comes back), it is just skipped this press.
+			std::vector<ItemId> live;
+			live.reserve(items.size());
+			for (const auto& id : items) {
+				const auto state = Favorites::Query(id.form);
+				if (state == Favorites::State::kUnfavorited) {
+					HotkeyManager::GetSingleton()->RemoveByItem(id);
+					logger::info("fire {:08X}: un-favorited -> dropped from its hotkey", id.form);
+					continue;
 				}
+				if (state == Favorites::State::kAbsent) {
+					if (Settings::DebugLog()) {
+						logger::info("fire {:08X}: none held -> skipped, binding kept", id.form);
+					}
+					continue;
+				}
+				live.push_back(id);
+			}
+			if (live.empty()) {
 				return;
 			}
+
 			if (Settings::DebugLog()) {
-				logger::info("equip fire -> form {:08X} ench {:08X} hp {}",
-					a_id.form, a_id.ench, a_id.health);
+				logger::info("equip fire -> {} item(s), first form {:08X} ench {:08X} hp {}",
+					live.size(), live.front().form, live.front().ench, live.front().health);
 			}
-			EquipForm(a_id);
+
+			// One item keeps the toggle; a group is a loadout and only ever equips.
+			if (live.size() == 1) {
+				EquipForm(live.front());
+			} else {
+				EquipSet(live);
+			}
 		});
 	}
 
