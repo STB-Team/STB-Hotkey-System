@@ -92,10 +92,11 @@ namespace HKS
 
 	// One chord -> one or more items.
 	//
-	// A plain hotkey holds exactly one item and keeps the old toggle behaviour (press to
-	// equip, press again to put away). Two or more items make it a GROUP: one press equips
-	// the whole set, the way SkyUI's item groups do, and nothing is ever toggled off -- a
-	// group is a loadout, and "press again to unequip half of it" is not useful.
+	// A plain hotkey holds exactly one item and toggles it: press to equip, press again to
+	// put away. Two or more items make it a GROUP, which toggles the same way but on the
+	// whole set -- one press puts the loadout on, and a press with all of it already on
+	// takes it off. Consumables in a group are used, not worn, so they never keep the set
+	// from reading as fully equipped and are left alone when it is stripped.
 	//
 	// Order matters. Hand items are handed out in the order they were added: the first
 	// weapon/spell takes the right hand, the second the left. That is also the order the

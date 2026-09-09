@@ -19,6 +19,7 @@ truth; nothing is stored on the item, and bindings live in the co-save.
 - Chord binds (`modifier + key`, optional 2-key chords), assigned live from the menus.
 - **Groups**: a second modifier stacks items onto one key, and one press equips the whole
   set — first weapon/spell to the right hand, second to the left, shields and torches left.
+  A press with the set already on takes it off again.
 - Keycap drawn on the inventory / magic / favorites rows, positioned after the item name.
 - Instance-aware: an enchanted or tempered copy binds separately from a plain one.
 - Shouts and powers can equip **and** cast on a single press.

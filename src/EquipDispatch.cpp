@@ -190,6 +190,66 @@ namespace HKS::EquipDispatch
 			return nullptr;
 		}
 
+		// Is the bound item on the player right now?
+		//
+		// The hand slots alone are not the answer. They only ever hold weapons, shields,
+		// torches and spells, so an armour piece looks "not equipped" no matter what -- and
+		// the toggle below then tried to equip it again instead of taking it off. That was
+		// the bug: cuirasses and helmets could be put on with their hotkey but never off.
+		//
+		// a_xl is the exact instance the bind points at when there is one; otherwise any
+		// worn copy of the base object counts, which is what a fungible bind means.
+		bool IsWornNow(RE::PlayerCharacter* a_player, RE::TESForm* a_form,
+			RE::TESBoundObject* a_bound, const ItemId& a_id, RE::ExtraDataList* a_xl)
+		{
+			if (a_xl) {
+				return a_xl->HasType(RE::ExtraDataType::kWorn) ||
+				       a_xl->HasType(RE::ExtraDataType::kWornLeft);
+			}
+			auto* proc = a_player->GetActorRuntimeData().currentProcess;
+			if (proc && (proc->GetEquippedRightHand() == a_form || proc->GetEquippedLeftHand() == a_form)) {
+				return true;
+			}
+			auto* changes = a_player->GetInventoryChanges();
+			if (!changes || !changes->entryList) {
+				return false;
+			}
+			// Match the enchant/temper the bind names, not just the base object: an
+			// enchanted cuirass and a plain one share a row, and taking the enchanted one
+			// off because the plain one's hotkey was pressed is the same class of mistake
+			// the instance-precise toggle exists to avoid. Wearing anything at all creates
+			// the extra-data list that carries kWorn, so a plain worn copy is found here.
+			for (auto* entry : *changes->entryList) {
+				if (!entry || entry->object != a_bound || !entry->extraLists) {
+					continue;
+				}
+				for (auto* xl : *entry->extraLists) {
+					if (!xl || !(xl->HasType(RE::ExtraDataType::kWorn) ||
+									xl->HasType(RE::ExtraDataType::kWornLeft))) {
+						continue;
+					}
+					RE::FormID    ench = 0;
+					std::uint16_t uid = 0;
+					std::int32_t  health = 0;
+					ReadListId(xl, ench, uid, health);
+					if (ench == a_id.ench && health == a_id.health) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		// Part of a "loadout" for the group toggle: something that stays on until it is
+		// taken off. Potions, food and ingredients are used up instead, so they never keep
+		// a group from reading as fully equipped -- and are left alone when it is stripped.
+		bool IsLoadoutGear(RE::TESForm* a_form)
+		{
+			return a_form->As<RE::TESBoundObject>() != nullptr &&
+			       !a_form->Is(RE::FormType::AlchemyItem) &&
+			       !a_form->Is(RE::FormType::Ingredient);
+		}
+
 		void EquipForm(const ItemId& a_id)
 		{
 			auto* form = RE::TESForm::LookupByID(a_id.form);
@@ -254,9 +314,7 @@ namespace HKS::EquipDispatch
 					// (same base) is in hand reads as "already worn" and unequips instead
 					// of switching.
 					if (xl) {
-						const bool worn = xl->HasType(RE::ExtraDataType::kWorn) ||
-						                  xl->HasType(RE::ExtraDataType::kWornLeft);
-						if (worn) {
+						if (IsWornNow(player, form, bound, a_id, xl)) {
 							em->UnequipObject(player, bound, xl);
 						} else {
 							em->EquipObject(player, bound, xl);
@@ -265,8 +323,9 @@ namespace HKS::EquipDispatch
 					}
 
 					// --- Fungible bind (plain copies of a base form) ---
-					// Default toggle: equip if in neither hand, otherwise put away.
-					if (inRight || inLeft) {
+					// Default toggle: equip if nothing of the kind is on, else take it off.
+					// "On" has to cover the armour slots too, not just the hands.
+					if (IsWornNow(player, form, bound, a_id, nullptr)) {
 						em->UnequipObject(player, bound, nullptr);
 					} else {
 						em->EquipObject(player, bound, nullptr);
@@ -377,6 +436,22 @@ namespace HKS::EquipDispatch
 			a_em->EquipObject(a_player, bound, xl);
 		}
 
+		// Take the whole set off. Consumables are skipped -- stripping a loadout must not
+		// drink the potion that is on the same key. Spells and shouts stay put: the engine
+		// offers no "unequip spell", and vanilla favorites never took one off either.
+		void UnequipSet(RE::PlayerCharacter* a_player, RE::ActorEquipManager* a_em,
+			const std::vector<ItemId>& a_items)
+		{
+			for (const auto& id : a_items) {
+				auto* form = RE::TESForm::LookupByID(id.form);
+				if (!form || !IsLoadoutGear(form)) {
+					continue;
+				}
+				auto* bound = form->As<RE::TESBoundObject>();
+				a_em->UnequipObject(a_player, bound, FindInstanceList(bound, id));
+			}
+		}
+
 		void EquipSet(const std::vector<ItemId>& a_items)
 		{
 			auto* player = RE::PlayerCharacter::GetSingleton();
@@ -384,6 +459,30 @@ namespace HKS::EquipDispatch
 			if (!player || !em) {
 				return;
 			}
+
+			// A group toggles like a single bind does, just on the whole set: everything in
+			// it already on -> take it all off, anything missing -> put the set on. Without
+			// this, gear that was perfectly removable on its own became stuck the moment it
+			// shared a key with something else.
+			bool anyGear = false;
+			bool allWorn = true;
+			for (const auto& id : a_items) {
+				auto* form = RE::TESForm::LookupByID(id.form);
+				if (!form || !IsLoadoutGear(form)) {
+					continue;
+				}
+				anyGear = true;
+				auto* bound = form->As<RE::TESBoundObject>();
+				if (!IsWornNow(player, form, bound, id, FindInstanceList(bound, id))) {
+					allWorn = false;
+					break;
+				}
+			}
+			if (anyGear && allWorn) {
+				UnequipSet(player, em, a_items);
+				return;
+			}
+
 			Hands hands;
 			for (const auto& id : a_items) {
 				EquipGroupMember(player, em, id, hands);
