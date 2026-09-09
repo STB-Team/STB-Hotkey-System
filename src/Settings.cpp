@@ -20,6 +20,8 @@ namespace HKS
 
 		_enableChords = ini.GetBoolValue("Assignment", "bEnableChords", _enableChords);
 
+		_warnKeyConflict = ini.GetBoolValue("Assignment", "bWarnKeyConflict", _warnKeyConflict);
+
 		_castVoiceOnEquip = ini.GetBoolValue("Gameplay", "bCastVoiceOnEquip", _castVoiceOnEquip);
 
 		_migrateVanillaHotkeys = ini.GetBoolValue("Compatibility", "bMigrateVanillaHotkeys", _migrateVanillaHotkeys);

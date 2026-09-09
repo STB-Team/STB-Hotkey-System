@@ -14,6 +14,7 @@ using namespace RE;
 #include "FavoritesHook.h"
 #include "InputHandler.h"
 #include "InventoryIcons.h"
+#include "Localization.h"
 #include "ModifierConflict.h"
 #include "PickupWatch.h"
 #include "Serialization.h"
@@ -27,6 +28,7 @@ static void SKSEMessageHandler(SKSE::MessagingInterface::Message* message)
 	case SKSE::MessagingInterface::kDataLoaded:
 		{
 			HKS::Settings::Load();
+			HKS::Localization::Load();
 			HKS::FavoritesHook::Install();
 			HKS::InventoryIcons::LoadResources();
 			HKS::InventoryIcons::Install();

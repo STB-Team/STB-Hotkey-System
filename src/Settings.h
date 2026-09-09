@@ -34,6 +34,12 @@ namespace HKS
 		// then clear the vanilla slot. Lets old saves keep working with our system.
 		static bool MigrateVanillaHotkeys() { return _migrateVanillaHotkeys; }
 
+		// Warn (with a confirm prompt) when the key being bound is already a vanilla
+		// gameplay control, so the player doesn't silently end up firing two things at
+		// once. The vanilla Hotkey1..8 slots are never counted -- replacing those is the
+		// whole point of this mod.
+		static bool WarnKeyConflict() { return _warnKeyConflict; }
+
 		// Verbose diagnostics (per-pickup, per-instance, "nothing held" notes). Off by
 		// default -- those fire on ordinary play and would flood the log. Assignments,
 		// binding removals and warnings are always logged regardless.
@@ -80,6 +86,7 @@ namespace HKS
 		static inline bool          _enableChords = true;
 		static inline bool          _castVoiceOnEquip = true;
 		static inline bool          _migrateVanillaHotkeys = true;
+		static inline bool          _warnKeyConflict = true;
 		static inline bool          _debugLog = false;
 		static inline bool          _iconAfterName = true;
 		static inline float         _iconScale = 75.0f;

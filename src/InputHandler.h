@@ -63,6 +63,11 @@ namespace HKS
 		// Called when a chord hits its key limit and when its keys are released.
 		void CommitCapture();
 
+		// Store one binding (assign + auto-favorite). Separate from CommitCapture because
+		// the key-conflict prompt is asynchronous: on a clash this is deferred into the
+		// message box callback and only runs if the player confirms.
+		void ApplyAssignment(Bind a_bind, ItemId a_target);
+
 		std::unordered_set<std::uint32_t> _kbHeld;
 		std::unordered_set<std::uint32_t> _msHeld;
 		std::unordered_set<std::uint32_t> _padHeld;

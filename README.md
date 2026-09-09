@@ -4,7 +4,7 @@ An SKSE64 plugin that replaces Skyrim's favorites hotkeys with a chord-based sys
 bind any item, spell, shout or power to a key (optionally a 2-key chord) from the
 inventory, magic or favorites menu, and see the assigned key drawn on the list row.
 
-Built for **Skyrim SE 1.5.97**.
+Supports **Skyrim SE 1.5.97** and **Skyrim AE 1.7.104**.
 
 ## Why not the vanilla slots
 
@@ -20,7 +20,9 @@ truth; nothing is stored on the item, and bindings live in the co-save.
 - Instance-aware: an enchanted or tempered copy binds separately from a plain one.
 - Shouts and powers can equip **and** cast on a single press.
 - Bindings survive running out of a consumable — the star is restored when the item comes back.
-- Optional migration of pre-existing vanilla hotkeys on first load.
+- By default, pre-existing vanilla hotkeys are migrated to this system when a save is loaded.
+- Optional warning before assigning a key already used by a gameplay control.
+- English and Russian interface text; additional languages can be added with a translation file.
 
 ## Building
 
@@ -60,6 +62,7 @@ JerryYOJ has given his permission for this reuse.
 ## Credits
 
 - **JerryYOJ** — Dynamic Inventory Icon Injector, the runtime SWF symbol injection.
+- **Vermunds** — Extended Hotkey System, the original inspiration and reference for assigning arbitrary keys from the Favorites menu.
 - **SkyUI Team** — the default keycap art is built from SkyUI's `buttonart.swf`.
 - The SKSE team and the CommonLibSSE-NG contributors.
 

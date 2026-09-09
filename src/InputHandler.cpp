@@ -4,6 +4,9 @@
 #include "Favorites.h"
 #include "HotkeyManager.h"
 #include "InventoryIcons.h"
+#include "KeyConflict.h"
+#include "Localization.h"
+#include "MessageBox.h"
 #include "MenuAssign.h"
 #include "Settings.h"
 
@@ -144,6 +147,26 @@ namespace HKS
 		return ui->GameIsPaused() || ui->IsApplicationMenuOpen();
 	}
 
+	// Actually store the binding. Split out of CommitCapture because the key-conflict
+	// prompt is asynchronous: when it fires we hand this to the message box callback and
+	// run it only if the player confirms.
+	void InputHandler::ApplyAssignment(Bind a_bind, ItemId a_target)
+	{
+		const auto res = HotkeyManager::GetSingleton()->Assign(a_bind, a_target);
+		logger::info("assigned chord ({} keys, dev {}) -> form {:08X} ench {:08X} uid {} hp {} (result {})",
+			a_bind.keys.size(), static_cast<int>(a_bind.device), a_target.form, a_target.ench,
+			a_target.uid, a_target.health, static_cast<int>(res));
+		InventoryIcons::MarkDirty();  // re-stamp menu keycaps (handles displaced bindings)
+		// Favorite it right away (star + shows in Favorites with our badge), like a
+		// vanilla F press. Prefer the game's real-entry path (live refresh); fall back
+		// to the by-form path otherwise.
+		if (res != HotkeyManager::AssignResult::kRemoved) {
+			if (!Favorites::FavoriteSelectedItem(a_target.form)) {
+				Favorites::EnsureFavorited(a_target.form);
+			}
+		}
+	}
+
 	void InputHandler::CommitCapture()
 	{
 		if (_capTarget && !_capChord.empty()) {
@@ -151,18 +174,38 @@ namespace HKS
 			bind.device = _capDevice;
 			bind.keys.assign(_capChord.begin(), _capChord.end());
 			bind.Canonicalize();
-			const auto res = HotkeyManager::GetSingleton()->Assign(bind, _capTarget);
-			logger::info("assigned chord ({} keys, dev {}) -> form {:08X} ench {:08X} uid {} hp {} (result {})",
-				bind.keys.size(), static_cast<int>(_capDevice), _capTarget.form, _capTarget.ench,
-				_capTarget.uid, _capTarget.health, static_cast<int>(res));
-			InventoryIcons::MarkDirty();  // re-stamp menu keycaps (handles displaced bindings)
-			// Favorite it right away (star + shows in Favorites with our badge), like a
-			// vanilla F press. Prefer the game's real-entry path (live refresh); fall back
-			// to the by-form path otherwise.
-			if (res != HotkeyManager::AssignResult::kRemoved) {
-				if (!Favorites::FavoriteSelectedItem(_capTarget.form)) {
-					Favorites::EnsureFavorited(_capTarget.form);
+
+			// If one of the chord's keys already drives a vanilla gameplay control, pressing
+			// it in game would fire both. Ask before committing -- unless the player turned
+			// the check off, or this is a keyboard-less bind (mouse/gamepad aren't checked).
+			std::string clashKey;
+			std::string clashControl;
+			if (Settings::WarnKeyConflict() && bind.device == RE::INPUT_DEVICE::kKeyboard) {
+				for (auto k : bind.keys) {
+					clashControl = KeyConflict::GameplayControl(k);
+					if (!clashControl.empty()) {
+						clashKey = KeyConflict::KeyName(k);
+						break;
+					}
 				}
+			}
+
+			if (!clashControl.empty()) {
+				const ItemId target = _capTarget;
+				ShowMessageBox(
+					Localization::Format("$STB_HK_KeyConflict_Body", { clashKey, clashControl }),
+					[bind, target](unsigned int a_button) {
+						if (a_button == 0) {
+							GetSingleton()->ApplyAssignment(bind, target);
+						} else {
+							logger::info("assign cancelled by player (key conflict)");
+						}
+					},
+					{ Localization::Get("$STB_HK_KeyConflict_Assign"),
+						Localization::Get("$STB_HK_KeyConflict_Cancel") });
+				logger::info("key conflict: {} is bound to \"{}\" -- prompting", clashKey, clashControl);
+			} else {
+				ApplyAssignment(bind, _capTarget);
 			}
 		}
 		else if (!_capChord.empty()) {
@@ -188,11 +231,14 @@ namespace HKS
 			return RE::BSEventNotifyControl::kContinue;
 		}
 
-		// The console overlays the assign menu but steals input focus -- never capture a
-		// chord (or assign) while it's up; the player is typing commands, not binding.
+		// The console and our own key-conflict prompt overlay the assign menu but steal
+		// input focus -- never capture a chord (or assign) while either is up. The player
+		// is typing commands or answering the prompt, not binding; without this a held
+		// modifier would keep capturing behind the dialog.
 		auto*               ui = RE::UI::GetSingleton();
-		const bool          consoleOpen = ui && ui->IsMenuOpen(RE::Console::MENU_NAME);
-		const bool          assignOpen = MenuAssign::IsAssignMenuOpen() && !consoleOpen;
+		const bool          blockingOverlay = ui && (ui->IsMenuOpen(RE::Console::MENU_NAME) ||
+                                              ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME));
+		const bool          assignOpen = MenuAssign::IsAssignMenuOpen() && !blockingOverlay;
 		const std::uint32_t modKey = Settings::AssignModifier();
 
 		if (!assignOpen && _capturing) {  // menu closed mid-capture -> abandon
