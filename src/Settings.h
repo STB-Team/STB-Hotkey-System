@@ -31,6 +31,10 @@ namespace HKS
 		// so the menu stays closeable. See MenuInputBlock.
 		static bool BlockMenuKeys() { return _blockMenuKeys; }
 
+		// Draw "Assign hotkey" / "Add to group" among the button hints at the bottom of the
+		// inventory and magic menus. SkyUI-shaped menus only -- see BottomBarHint.
+		static bool ShowAssignHint() { return _showAssignHint; }
+
 		// Allow 2-key chords when assigning.
 		//   true  -> a single key commits on modifier RELEASE (so you can still add a 2nd
 		//            key); a 2nd key commits the chord instantly on its press.
@@ -98,6 +102,7 @@ namespace HKS
 		static inline std::uint32_t _assignModifier = 0x1D;
 		static inline std::uint32_t _groupModifier = 0x2A;
 		static inline bool          _blockMenuKeys = true;
+		static inline bool          _showAssignHint = true;
 		static inline bool          _enableChords = true;
 		static inline bool          _castVoiceOnEquip = true;
 		static inline bool          _migrateVanillaHotkeys = true;

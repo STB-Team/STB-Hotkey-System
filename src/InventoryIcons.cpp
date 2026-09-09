@@ -1,5 +1,6 @@
 #include "InventoryIcons.h"
 
+#include "BottomBarHint.h"
 #include "Favorites.h"
 #include "HotkeyManager.h"
 #include "Settings.h"
@@ -276,7 +277,7 @@ namespace HKS
 			}
 		}
 
-		void Setup(RE::IMenu* a_menu, Settings::MenuKind a_kind)
+		void Setup(RE::IMenu* a_menu, Settings::MenuKind a_kind, bool a_bottomBarHint)
 		{
 			if (!a_menu || !a_menu->uiMovie) {
 				return;
@@ -300,6 +301,13 @@ namespace HKS
 			proto.SetMember("formatName", newFormatName);
 
 			InjectKeycaps(a_menu);
+
+			// Only where binding is the natural thing to do. Container/Barter/Gift can
+			// assign too, but their button row is about moving items between two sides and
+			// a hotkey hint there is just noise.
+			if (a_bottomBarHint) {
+				BottomBarHint::Setup(a_menu);
+			}
 			logger::info("InventoryIcons: hooked formatName + injected keycaps");
 		}
 
@@ -415,12 +423,12 @@ namespace HKS
 		}
 
 		// --- per-menu vtable thunks ------------------------------------------------
-#define HKS_MENU_HOOKS(TAG, KIND, LIVEPRUNE)                                                       \
+#define HKS_MENU_HOOKS(TAG, KIND, LIVEPRUNE, HINT)                                                       \
 	REL::Relocation<void (*)(RE::IMenu*)>                       _pc##TAG;                          \
 	REL::Relocation<void (*)(RE::IMenu*, float, std::uint32_t)> _adv##TAG;                         \
 	void PostCreate##TAG(RE::IMenu* a_this)                                                        \
 	{                                                                                             \
-		Setup(a_this, KIND);                                                                       \
+		Setup(a_this, KIND, HINT);                                                                       \
 		_pc##TAG(a_this);                                                                         \
 	}                                                                                             \
 	void Advance##TAG(RE::IMenu* a_this, float a_interval, std::uint32_t a_time)                   \
@@ -431,11 +439,11 @@ namespace HKS
 
 		// Live prune only where the player un-favorites (F); trade menus move items
 		// between sides, which would read as un-favorited mid-transaction.
-		HKS_MENU_HOOKS(Inv, Settings::MenuKind::kInventory, true)
-		HKS_MENU_HOOKS(Cont, Settings::MenuKind::kInventory, false)
-		HKS_MENU_HOOKS(Magic, Settings::MenuKind::kMagic, true)
-		HKS_MENU_HOOKS(Gift, Settings::MenuKind::kInventory, false)
-		HKS_MENU_HOOKS(Bart, Settings::MenuKind::kInventory, false)
+		HKS_MENU_HOOKS(Inv, Settings::MenuKind::kInventory, true, true)
+		HKS_MENU_HOOKS(Cont, Settings::MenuKind::kInventory, false, false)
+		HKS_MENU_HOOKS(Magic, Settings::MenuKind::kMagic, true, true)
+		HKS_MENU_HOOKS(Gift, Settings::MenuKind::kInventory, false, false)
+		HKS_MENU_HOOKS(Bart, Settings::MenuKind::kInventory, false, false)
 #undef HKS_MENU_HOOKS
 
 		// Favorites: only the PostCreate (inject + setEntry hook) lives here; the

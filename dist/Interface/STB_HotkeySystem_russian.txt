@@ -12,3 +12,7 @@ $STB_HK_ModifierConflict_Keep	Оставить как есть
 $STB_HK_KeyConflict_Body	Клавиша {0} уже назначена на действие «{1}».\n\nПри нажатии в игре сработает и хоткей, и это действие. Всё равно назначить?
 $STB_HK_KeyConflict_Assign	Всё равно назначить
 $STB_HK_KeyConflict_Cancel	Отмена
+
+; --- подсказки в нижней панели инвентаря / магии ---
+$STB_HK_Hint_Assign	Назначить хоткей
+$STB_HK_Hint_Group	Добавить в группу

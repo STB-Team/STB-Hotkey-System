@@ -30,6 +30,10 @@ namespace HKS::Localization
 					"Press it in game and both will fire. Assign the hotkey anyway?" },
 				{ "$STB_HK_KeyConflict_Assign", "Assign anyway" },
 				{ "$STB_HK_KeyConflict_Cancel", "Cancel" },
+
+				// --- button hints along the bottom of the item menus ---
+				{ "$STB_HK_Hint_Assign", "Assign hotkey" },
+				{ "$STB_HK_Hint_Group", "Add to group" },
 			};
 			return kDefaults;
 		}

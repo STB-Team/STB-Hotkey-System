@@ -14,3 +14,7 @@ $STB_HK_ModifierConflict_Keep	Leave it as is
 $STB_HK_KeyConflict_Body	Key {0} is already bound to "{1}".\n\nPress it in game and both will fire. Assign the hotkey anyway?
 $STB_HK_KeyConflict_Assign	Assign anyway
 $STB_HK_KeyConflict_Cancel	Cancel
+
+; --- button hints along the bottom of the inventory / magic menus ---
+$STB_HK_Hint_Assign	Assign hotkey
+$STB_HK_Hint_Group	Add to group

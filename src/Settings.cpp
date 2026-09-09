@@ -25,6 +25,8 @@ namespace HKS
 
 		_blockMenuKeys = ini.GetBoolValue("Assignment", "bBlockMenuKeys", _blockMenuKeys);
 
+		_showAssignHint = ini.GetBoolValue("Assignment", "bShowAssignHint", _showAssignHint);
+
 		_warnKeyConflict = ini.GetBoolValue("Assignment", "bWarnKeyConflict", _warnKeyConflict);
 
 		_castVoiceOnEquip = ini.GetBoolValue("Gameplay", "bCastVoiceOnEquip", _castVoiceOnEquip);
