@@ -306,7 +306,7 @@ namespace HKS
 			// assign too, but their button row is about moving items between two sides and
 			// a hotkey hint there is just noise.
 			if (a_bottomBarHint) {
-				BottomBarHint::Setup(a_menu);
+				BottomBarHint::SetupItemMenu(a_menu);
 			}
 			logger::info("InventoryIcons: hooked formatName + injected keycaps");
 		}
@@ -334,6 +334,9 @@ namespace HKS
 			proto.SetMember("setEntry", newSetEntry);
 
 			InjectKeycaps(a_menu);
+			// Untarnished-style favorites menus draw their own hint rows; a vanilla one
+			// draws none and this does nothing.
+			BottomBarHint::SetupFavorites(a_menu);
 			logger::info("InventoryIcons: hooked favorites setEntry + injected keycaps");
 		}
 
