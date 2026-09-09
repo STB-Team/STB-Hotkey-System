@@ -23,7 +23,16 @@ namespace HKS
 		// (SkyUI's item groups). Pressing it again on a member removes that member.
 		// 0 disables groups entirely. Default 0x2A (Left Shift).
 		static std::uint32_t GroupModifier() { return _groupModifier; }
-		static void          SetGroupModifier(std::uint32_t a_code) { _groupModifier = a_code; }
+
+		// Turn groups off for the session because the configured key can't work (it is the
+		// assign modifier, or the Favorites-menu key). Latched, so the next Settings::Load()
+		// -- which runs on every menu open, to pick up live INI tweaks -- doesn't quietly
+		// read the broken value back in.
+		static void DisableGroups()
+		{
+			_groupsDisabled = true;
+			_groupModifier = 0;
+		}
 
 		// While an assign modifier is held in an item menu, withhold menu keys from the
 		// menu itself, so binding Ctrl+E doesn't also equip the item, Ctrl+R doesn't drop
@@ -101,6 +110,7 @@ namespace HKS
 	private:
 		static inline std::uint32_t _assignModifier = 0x1D;
 		static inline std::uint32_t _groupModifier = 0x2A;
+		static inline bool          _groupsDisabled = false;
 		static inline bool          _blockMenuKeys = true;
 		static inline bool          _showAssignHint = true;
 		static inline bool          _enableChords = true;

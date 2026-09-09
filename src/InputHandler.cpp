@@ -102,11 +102,7 @@ namespace HKS
 	{
 		auto held = const_cast<InputHandler*>(this)->HeldFor(a_device);
 		held.insert(a_key);  // the just-pressed key may not be in the set yet
-		const auto* hk = HotkeyManager::GetSingleton()->ResolveChord(a_device, held, a_key);
-		if (!hk) {
-			return {};
-		}
-		for (const auto& id : hk->items) {
+		for (const auto& id : HotkeyManager::GetSingleton()->ResolveChordItems(a_device, held, a_key)) {
 			if (EquipDispatch::IsVoiceForm(RE::TESForm::LookupByID(id.form))) {
 				return id;
 			}
@@ -344,15 +340,11 @@ namespace HKS
 				continue;  // only the completing down-stroke fires, never while paused
 			}
 
-			// ResolveChord only returns a chord that contains idCode, so the matched bind
-			// is one this keystroke actually completes (an unrelated held/phantom key can't
-			// shadow it and drop the press). Copy the members out straight away: the store
-			// is mutated from the menu and main threads, so the pointer must not outlive
-			// this statement.
-			std::vector<ItemId> items;
-			if (const auto* hotkey = HotkeyManager::GetSingleton()->ResolveChord(device, held, idCode)) {
-				items = hotkey->items;
-			}
+			// Only a chord that CONTAINS idCode is returned, so the matched bind is one this
+			// keystroke actually completes (an unrelated held/phantom key can't shadow it
+			// and drop the press). The members come back copied: the store is mutated from
+			// the main thread, so a pointer into it must not outlive the lock.
+			auto items = HotkeyManager::GetSingleton()->ResolveChordItems(device, held, idCode);
 			if (items.empty()) {
 				continue;
 			}

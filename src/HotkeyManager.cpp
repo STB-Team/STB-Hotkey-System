@@ -152,6 +152,16 @@ namespace HKS
 		return best;
 	}
 
+	std::vector<ItemId> HotkeyManager::ResolveChordItems(
+		RE::INPUT_DEVICE                         a_device,
+		const std::unordered_set<std::uint32_t>& a_held,
+		std::uint32_t                            a_trigger) const
+	{
+		std::scoped_lock lk(_lock);
+		const auto*      hk = ResolveChord(a_device, a_held, a_trigger);
+		return hk ? hk->items : std::vector<ItemId>{};
+	}
+
 	std::vector<Hotkey> HotkeyManager::Snapshot() const
 	{
 		std::scoped_lock lk(_lock);

@@ -65,20 +65,17 @@ namespace HKS::ModifierConflict
 		const std::uint32_t favKey = FavoritesKey();
 		const std::uint32_t modKey = Settings::AssignModifier();
 
-		// The group modifier has two hard requirements, and neither is worth a prompt --
-		// there is a working default and only a hand-edited INI can break it. Sharing the
-		// assign modifier makes "replace" and "stack" indistinguishable; sharing the
-		// Favorites key brings back the menu that could not be closed. Either way groups
-		// are switched off for the session rather than misbehaving.
-		if (const std::uint32_t groupKey = Settings::GroupModifier(); groupKey != 0) {
-			const char* why = groupKey == modKey ? "the assign modifier" :
-			                  (groupKey == favKey ? "the Favorites-menu key" : nullptr);
-			if (why) {
-				logger::warn("group modifier 0x{:X} ({}) is also {} -- groups disabled; "
-				             "set [Assignment] iGroupModifierScanCode to a free key",
-					groupKey, KeyConflict::KeyName(groupKey), why);
-				Settings::SetGroupModifier(0);
-			}
+		// The group modifier must not open the Favorites menu: holding it would fight the
+		// menu the same way the assign modifier did, and the menu could not be closed. Not
+		// worth a prompt -- the default is fine and only a hand-edited INI reaches here --
+		// so groups are switched off for the session with a line in the log instead.
+		// (Sharing the ASSIGN modifier is caught earlier, in Settings::Load.)
+		if (const std::uint32_t groupKey = Settings::GroupModifier();
+			groupKey != 0 && groupKey == favKey) {
+			logger::warn("group modifier 0x{:X} ({}) also opens the Favorites menu -- groups "
+			             "disabled; set [Assignment] iGroupModifierScanCode to a free key",
+				groupKey, KeyConflict::KeyName(groupKey));
+			Settings::DisableGroups();
 		}
 		if (favKey == RE::ControlMap::kInvalid || favKey != modKey) {
 			return;  // no conflict

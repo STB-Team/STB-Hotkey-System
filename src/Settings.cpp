@@ -20,6 +20,11 @@ namespace HKS
 
 		_groupModifier = static_cast<std::uint32_t>(
 			ini.GetLongValue("Assignment", "iGroupModifierScanCode", static_cast<long>(_groupModifier)));
+		// One key can't mean both "replace" and "stack", and a session that already gave up
+		// on groups stays given up (see DisableGroups).
+		if (_groupsDisabled || _groupModifier == _assignModifier) {
+			_groupModifier = 0;
+		}
 
 		_enableChords = ini.GetBoolValue("Assignment", "bEnableChords", _enableChords);
 

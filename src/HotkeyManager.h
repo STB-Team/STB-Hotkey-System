@@ -62,6 +62,14 @@ namespace HKS
 			const std::unordered_set<std::uint32_t>&    a_held,
 			std::uint32_t                               a_trigger = 0) const;
 
+		// ResolveChord, but returning a COPY of the matched chord's members. The pointer
+		// form is only safe while the lock is held, and the input thread resolves chords
+		// while the main thread prunes un-favorited items out of the very same vector.
+		[[nodiscard]] std::vector<ItemId> ResolveChordItems(
+			RE::INPUT_DEVICE                         a_device,
+			const std::unordered_set<std::uint32_t>& a_held,
+			std::uint32_t                            a_trigger = 0) const;
+
 		[[nodiscard]] const std::vector<Hotkey>& GetAll() const { return _hotkeys; }
 
 		// Locked copy, safe to iterate off-lock (the input sink and the menu/main threads
