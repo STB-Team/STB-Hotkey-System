@@ -98,16 +98,11 @@ namespace HKS
 		}
 	}
 
-	ItemId InputHandler::ResolveVoiceForKey(RE::INPUT_DEVICE a_device, std::uint32_t a_key) const
+	std::vector<ItemId> InputHandler::ResolveForKey(RE::INPUT_DEVICE a_device, std::uint32_t a_key) const
 	{
 		auto held = const_cast<InputHandler*>(this)->HeldFor(a_device);
 		held.insert(a_key);  // the just-pressed key may not be in the set yet
-		for (const auto& id : HotkeyManager::GetSingleton()->ResolveChordItems(a_device, held, a_key)) {
-			if (EquipDispatch::IsVoiceForm(RE::TESForm::LookupByID(id.form))) {
-				return id;
-			}
-		}
-		return {};
+		return HotkeyManager::GetSingleton()->ResolveChordItems(a_device, held, a_key);
 	}
 
 	bool InputHandler::FiringSuppressed()
@@ -356,17 +351,13 @@ namespace HKS
 			if (items.empty()) {
 				continue;
 			}
-			if (Settings::CastVoiceOnEquip()) {
-				// Voice forms (shout/power) are equipped AND charged by the ShoutHandler
-				// hook, which runs before this sink. Firing them here too would re-equip
-				// mid-charge and cut the cast short. The rest of a group still goes through
-				// here, so "shout + armour" equips the armour and shouts on one press.
-				std::erase_if(items, [](const ItemId& a_id) {
-					return EquipDispatch::IsVoiceForm(RE::TESForm::LookupByID(a_id.form));
-				});
-				if (items.empty()) {
-					continue;
-				}
+			// A mod that equipped one of these through the plugin API a moment ago has taken
+			// responsibility for this press -- firing it again here would re-equip on top of
+			// whatever it started (a shout mid-charge, say). The rest of a group still goes
+			// through, so "shout + armour" on one key still puts the armour on.
+			std::erase_if(items, [](const ItemId& a_id) { return EquipDispatch::IsClaimed(a_id); });
+			if (items.empty()) {
+				continue;
 			}
 			EquipDispatch::Fire(std::move(items));
 		}

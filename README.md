@@ -25,7 +25,6 @@ truth; nothing is stored on the item, and bindings live in the co-save.
 - **Remembered hand**: a binding made while the form was in hand puts it back in that hand
   every press — both hands if it was in both — and marks the row `R` / `L`.
 - Instance-aware: an enchanted or tempered copy binds separately from a plain one.
-- Shouts and powers can equip **and** cast on a single press.
 - Bindings survive running out of a consumable — the star is restored when the item comes back.
 - While a modifier is held, menu keys stop doing their menu job, so binding `Ctrl+E` doesn't
   also equip the item and `Ctrl+R` doesn't drop it.
@@ -33,6 +32,7 @@ truth; nothing is stored on the item, and bindings live in the co-save.
 - By default, pre-existing vanilla hotkeys are migrated to this system when a save is loaded.
 - Optional warning before assigning a key already used by a gameplay control.
 - English and Russian interface text; additional languages can be added with a translation file.
+- A [plugin API](api/README.md) other SKSE mods can read bindings through.
 
 ## Building
 

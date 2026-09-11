@@ -4,6 +4,9 @@
 #include "HotkeyManager.h"
 #include "Settings.h"
 
+#include <algorithm>
+#include <chrono>
+#include <mutex>
 #include <utility>
 #include <vector>
 
@@ -648,6 +651,17 @@ namespace HKS::EquipDispatch
 		});
 	}
 
+	namespace
+	{
+		// Forms an API consumer equipped a moment ago, with the time it happened. Small and
+		// short-lived, so a flat list beats a map. Guarded because EquipNow is called from
+		// an input handler while our own sink reads it from the same dispatch.
+		constexpr auto kClaimWindow = std::chrono::milliseconds(100);
+
+		std::mutex                                                                       g_claimLock;
+		std::vector<std::pair<RE::FormID, std::chrono::steady_clock::time_point>>        g_claims;
+	}
+
 	bool EquipNow(const ItemId& a_id)
 	{
 		if (!a_id) {
@@ -656,17 +670,34 @@ namespace HKS::EquipDispatch
 		const auto state = Favorites::Query(a_id.form);
 		if (state == Favorites::State::kUnfavorited) {
 			HotkeyManager::GetSingleton()->RemoveByItem(a_id);
-			logger::info("voice fire {:08X}: un-favorited -> binding removed", a_id.form);
+			logger::info("EquipNow {:08X}: un-favorited -> binding removed", a_id.form);
 			return false;
 		}
 		if (state == Favorites::State::kAbsent) {
-			// The player no longer has this power/shout (or holds none of the item).
+			// The player no longer holds it (used the last one, lost the power).
 			if (Settings::DebugLog()) {
-				logger::info("voice fire {:08X}: player no longer has it -> not cast", a_id.form);
+				logger::info("EquipNow {:08X}: player no longer has it", a_id.form);
 			}
 			return false;
 		}
+
 		EquipForm(a_id);
+
+		const auto now = std::chrono::steady_clock::now();
+		{
+			std::scoped_lock lk(g_claimLock);
+			std::erase_if(g_claims, [&](const auto& c) { return now - c.second > kClaimWindow; });
+			g_claims.emplace_back(a_id.form, now);
+		}
 		return true;
+	}
+
+	bool IsClaimed(const ItemId& a_id)
+	{
+		const auto       now = std::chrono::steady_clock::now();
+		std::scoped_lock lk(g_claimLock);
+		std::erase_if(g_claims, [&](const auto& c) { return now - c.second > kClaimWindow; });
+		return std::any_of(g_claims.begin(), g_claims.end(),
+			[&](const auto& c) { return c.first == a_id.form; });
 	}
 }

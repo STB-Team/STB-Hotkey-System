@@ -51,10 +51,6 @@ namespace HKS
 		//            key down = bind), no release needed.
 		static bool EnableChords() { return _enableChords; }
 
-		// When a hotkey equips a shout/power, also cast it immediately (via the
-		// ShoutHandler), so one press equips AND fires it.
-		static bool CastVoiceOnEquip() { return _castVoiceOnEquip; }
-
 		// On loading a save, convert any pre-existing vanilla favorites hotkeys (item
 		// ExtraHotkey slots + MagicFavorites hotkeys) into our binds on number keys 1-8,
 		// then clear the vanilla slot. Lets old saves keep working with our system.
@@ -147,7 +143,6 @@ namespace HKS
 		static inline bool          _blockMenuKeys = true;
 		static inline bool          _showAssignHint = true;
 		static inline bool          _enableChords = true;
-		static inline bool          _castVoiceOnEquip = true;
 		static inline bool          _migrateVanillaHotkeys = true;
 		static inline bool          _warnKeyConflict = true;
 		static inline bool          _debugLog = false;

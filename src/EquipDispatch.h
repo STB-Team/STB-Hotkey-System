@@ -23,14 +23,22 @@ namespace HKS::EquipDispatch
 	// not in a hand -- armour, ammo, and anything not currently equipped.
 	[[nodiscard]] std::uint8_t CurrentHands(RE::TESForm* a_form);
 
-	// True for forms that go in the Voice slot (shouts and powers/lesser-powers). These
-	// are the ones that can be "equip + instantly cast" via the ShoutHandler hook.
+	// True for forms that go in the Voice slot (shouts and powers/lesser-powers).
 	[[nodiscard]] bool IsVoiceForm(RE::TESForm* a_form);
 
-	// Equip synchronously (caller must be on the main thread, e.g. inside an input
-	// handler). Used by the ShoutHandler hook so the cast that follows sees the new
-	// shout/power already equipped. Returns false when nothing was equipped (binding
-	// dropped, or the player no longer has the form) -- the caller must then NOT let the
-	// shout key act, or vanilla would fire whatever is still in the voice slot.
+	// Equip synchronously, on the calling thread, which must be the main one -- an input
+	// handler qualifies. Returns false when nothing was equipped: the binding was dropped
+	// because the player un-favorited it, or they no longer hold the form. Exposed through
+	// the plugin API for mods that must act on the same press, such as one that starts
+	// charging a shout and needs it already in the voice slot.
+	//
+	// A successful call also CLAIMS the binding for a moment (see IsClaimed): the caller
+	// has handled this press, and our own input sink -- which runs after the player-input
+	// sinks in the same dispatch -- must not equip it a second time on top.
 	[[nodiscard]] bool EquipNow(const ItemId& a_id);
+
+	// True while a_id is still claimed by a recent EquipNow. The window is deliberately
+	// short: it only has to cover the rest of the keypress that claimed it, and a stale
+	// claim would otherwise swallow a genuine second press.
+	[[nodiscard]] bool IsClaimed(const ItemId& a_id);
 }

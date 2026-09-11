@@ -3,6 +3,7 @@
 #include "Hotkey.h"
 
 #include <unordered_set>
+#include <vector>
 
 namespace HKS
 {
@@ -39,17 +40,15 @@ namespace HKS
 		// drags in unresolved NG symbols).
 		[[nodiscard]] bool IsHeld(RE::INPUT_DEVICE a_device, std::uint32_t a_key) const;
 
-		// Resolve the hotkey for "the chord currently held plus a_key" and return its VOICE
-		// member -- the shout or power, if the bind holds one (form 0 otherwise). Used by
-		// the ShoutHandler hook, which runs before this sink, to decide whether a keypress
-		// should charge a shout. A group can hold at most one voice form (there is only one
-		// voice slot), so the first match is the answer.
-		[[nodiscard]] ItemId ResolveVoiceForKey(RE::INPUT_DEVICE a_device, std::uint32_t a_key) const;
+		// What "a_key pressed right now" would fire: the members of the chord it completes,
+		// given whatever else is currently held. Empty if the key is bound to nothing.
+		// This is what the plugin API hands to other mods -- copies, resolved under the
+		// store's lock, safe to read from the input thread.
+		[[nodiscard]] std::vector<ItemId> ResolveForKey(RE::INPUT_DEVICE a_device, std::uint32_t a_key) const;
 
 		// True when a hotkey must NOT fire (paused, an assign/item/dialogue/etc. menu
-		// owns input). Shared with the ShoutHook so voice forms obey the same rules.
-		// Built from menu state (not just the pause/movement flags) so it still holds
-		// under SkyrimSoulsRE, which un-pauses menus and keeps input flowing.
+		// owns input). Built from menu state (not just the pause/movement flags) so it
+		// still holds under SkyrimSoulsRE, which un-pauses menus and keeps input flowing.
 		[[nodiscard]] static bool FiringSuppressed();
 
 	private:

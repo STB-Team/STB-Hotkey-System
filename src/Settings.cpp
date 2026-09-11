@@ -34,8 +34,6 @@ namespace HKS
 
 		_warnKeyConflict = ini.GetBoolValue("Assignment", "bWarnKeyConflict", _warnKeyConflict);
 
-		_castVoiceOnEquip = ini.GetBoolValue("Gameplay", "bCastVoiceOnEquip", _castVoiceOnEquip);
-
 		_migrateVanillaHotkeys = ini.GetBoolValue("Compatibility", "bMigrateVanillaHotkeys", _migrateVanillaHotkeys);
 
 		_debugLog = ini.GetBoolValue("Debug", "bDebugLog", _debugLog);

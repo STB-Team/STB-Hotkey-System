@@ -20,7 +20,6 @@ using namespace RE;
 #include "PickupWatch.h"
 #include "Serialization.h"
 #include "Settings.h"
-#include "ShoutHook.h"
 #include "VanillaMigration.h"
 
 static void SKSEMessageHandler(SKSE::MessagingInterface::Message* message)
@@ -33,7 +32,6 @@ static void SKSEMessageHandler(SKSE::MessagingInterface::Message* message)
 			HKS::FavoritesHook::Install();
 			HKS::InventoryIcons::LoadResources();
 			HKS::InventoryIcons::Install();
-			HKS::ShoutHook::Install();
 			HKS::MenuInputBlock::Install();
 			HKS::InputHandler::Register();
 			HKS::PickupWatch::Register();
