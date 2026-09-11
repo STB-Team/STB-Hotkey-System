@@ -63,34 +63,38 @@ namespace HKS::PluginAPI
 				return EquipDispatch::EquipNow(FromBinding(a_binding));
 			}
 
-			[[nodiscard]] bool IsBound(std::uint32_t a_form) const noexcept override
-			{
-				return HotkeyManager::GetSingleton()->FindByForm(static_cast<RE::FormID>(a_form)) != nullptr;
-			}
-
-			[[nodiscard]] std::uint32_t GetChord(std::uint32_t a_form, std::uint32_t* a_out,
+			[[nodiscard]] std::uint32_t GetHotkey(std::uint32_t a_form, std::uint32_t* a_out,
 				std::uint32_t a_max, API::Device* a_device) const noexcept override
 			{
-				// FindByForm hands back a pointer into the store, so read what we need
-				// immediately -- the main thread prunes that vector every few frames.
-				auto*      mgr = HotkeyManager::GetSingleton();
-				const auto snapshot = mgr->Snapshot();
-				for (const auto& h : snapshot) {
-					if (!h.HasForm(static_cast<RE::FormID>(a_form))) {
-						continue;
-					}
-					if (a_device) {
-						*a_device = static_cast<API::Device>(h.bind.device);
-					}
-					const auto n = static_cast<std::uint32_t>(h.bind.keys.size());
-					if (a_out) {
-						for (std::uint32_t i = 0; i < n && i < a_max; ++i) {
-							a_out[i] = h.bind.keys[i];
-						}
-					}
-					return n;
+				return Emit(HotkeyManager::GetSingleton()->BindOfForm(static_cast<RE::FormID>(a_form)),
+					a_out, a_max, a_device);
+			}
+
+			[[nodiscard]] std::uint32_t GetHotkeyExact(const API::Binding& a_entry, std::uint32_t* a_out,
+				std::uint32_t a_max, API::Device* a_device) const noexcept override
+			{
+				return Emit(HotkeyManager::GetSingleton()->BindOfItem(FromBinding(a_entry)),
+					a_out, a_max, a_device);
+			}
+
+		private:
+			// Shared tail of the two lookups: copy the chord out, report its true length.
+			static std::uint32_t Emit(const Bind& a_bind, std::uint32_t* a_out, std::uint32_t a_max,
+				API::Device* a_device)
+			{
+				if (!a_bind.IsValid()) {
+					return 0;
 				}
-				return 0;
+				if (a_device) {
+					*a_device = static_cast<API::Device>(a_bind.device);
+				}
+				const auto n = static_cast<std::uint32_t>(a_bind.keys.size());
+				if (a_out) {
+					for (std::uint32_t i = 0; i < n && i < a_max; ++i) {
+						a_out[i] = a_bind.keys[i];
+					}
+				}
+				return n;
 			}
 		};
 

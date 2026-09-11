@@ -152,6 +152,28 @@ namespace HKS
 		return best;
 	}
 
+	Bind HotkeyManager::BindOfItem(const ItemId& a_id) const
+	{
+		std::scoped_lock lk(_lock);
+		for (const auto& h : _hotkeys) {
+			if (h.Has(a_id)) {
+				return h.bind;
+			}
+		}
+		return {};
+	}
+
+	Bind HotkeyManager::BindOfForm(RE::FormID a_form) const
+	{
+		std::scoped_lock lk(_lock);
+		for (const auto& h : _hotkeys) {
+			if (h.HasForm(a_form)) {
+				return h.bind;
+			}
+		}
+		return {};
+	}
+
 	std::vector<ItemId> HotkeyManager::ResolveChordItems(
 		RE::INPUT_DEVICE                         a_device,
 		const std::unordered_set<std::uint32_t>& a_held,

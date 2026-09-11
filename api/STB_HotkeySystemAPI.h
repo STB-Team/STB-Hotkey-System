@@ -97,13 +97,24 @@ namespace STB::HotkeySystem
 		// so it will not equip the same entry again a moment later from its own input sink.
 		[[nodiscard]] virtual bool EquipNow(const Binding& a_binding) const noexcept = 0;
 
-		// Is this form on any key? Cheap; for a HUD widget that wants to mark bound entries.
-		[[nodiscard]] virtual bool IsBound(std::uint32_t a_form) const noexcept = 0;
-
-		// The chord a_form sits on, for drawing it. Writes up to a_max scancodes (a chord is
-		// at most two) and returns how many there are; 0 means unbound. a_device, when not
+		// The other direction: which key an entry sits on, for drawing it on a row or a HUD.
+		// Writes up to a_max scancodes -- a chord is at most two -- and returns how many
+		// there are; 0 means the entry is not bound, so this doubles as "is it bound at
+		// all", with a_out null and a_max 0 if that is all you need. a_device, when not
 		// null, receives the device those codes belong to.
-		[[nodiscard]] virtual std::uint32_t GetChord(std::uint32_t a_form, std::uint32_t* a_out,
+		//
+		// By base form: any instance of it will do. If the player has a plain sword on one
+		// key and an enchanted copy of the same base on another, you get whichever the
+		// lookup reaches first -- fine for "does this form have a hotkey", wrong for
+		// labelling a specific inventory row.
+		[[nodiscard]] virtual std::uint32_t GetHotkey(std::uint32_t a_form, std::uint32_t* a_out,
+			std::uint32_t a_max, Device* a_device) const noexcept = 0;
+
+		// By exact instance, which is what a row in an item list needs: fill in `ench` and
+		// `health` from the row's extra data (0 and 0 for a plain copy) and only the key
+		// bound to that copy comes back. `hands` is ignored -- it describes the binding, not
+		// the item. A Binding handed out by Resolve round-trips through here unchanged.
+		[[nodiscard]] virtual std::uint32_t GetHotkeyExact(const Binding& a_entry, std::uint32_t* a_out,
 			std::uint32_t a_max, Device* a_device) const noexcept = 0;
 
 	protected:

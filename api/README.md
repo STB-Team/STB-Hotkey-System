@@ -42,12 +42,14 @@ object belongs to STB Hotkey System and lives for the process: never delete it.
 
 ## What v1 offers
 
+Both directions are covered: key → what it fires, and entry → which key it is on.
+
 | | |
 |---|---|
 | `Resolve(device, key, out, max)` | What pressing that key would fire **right now**, chords included — it reads the keys currently held, so call it while handling the key-down. Returns the true count, which may exceed `max`. |
 | `EquipNow(binding)` | Equip one entry synchronously on the main thread, so you can act on the same press. `false` means nothing was equipped — do not go ahead. Also tells the mod you have handled this press. |
-| `IsBound(form)` | Is this form on any key. |
-| `GetChord(form, out, max, device)` | The scancodes a form sits on, for drawing it. |
+| `GetHotkey(form, out, max, device)` | The scancodes a form sits on, any instance of it. 0 means unbound, so `GetHotkey(form, nullptr, 0, nullptr)` is also the "is it bound" question. |
+| `GetHotkeyExact(binding, out, max, device)` | The same, for one specific instance — fill in `ench` and `health` from the row's extra data. This is the one an item list wants: a plain sword and an enchanted copy of the same base are different bindings. |
 
 ### Claiming a press
 

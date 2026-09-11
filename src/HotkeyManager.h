@@ -47,6 +47,13 @@ namespace HKS
 
 		[[nodiscard]] const Hotkey* FindByBind(const Bind& a_bind) const;
 
+		// The chord holding an item, COPIED under the lock -- an invalid (empty) Bind when
+		// nothing holds it. The Find* above hand back pointers into the store, which the
+		// main thread prunes every few frames; these are what the plugin API needs, and
+		// they copy one small vector rather than the whole table per call.
+		[[nodiscard]] Bind BindOfItem(const ItemId& a_id) const;
+		[[nodiscard]] Bind BindOfForm(RE::FormID a_form) const;
+
 		// Longest-match resolution: among hotkeys whose device matches and whose whole
 		// chord is currently held, return the one with the most keys (so "G" never
 		// fires when "Alt+G" was pressed). Returns nullptr if nothing matches.
