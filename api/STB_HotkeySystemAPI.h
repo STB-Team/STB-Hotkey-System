@@ -67,6 +67,17 @@ namespace STB::HotkeySystem
 	};
 	static_assert(sizeof(Binding) == 16);
 
+	// A chord is at most two simultaneously-held keys, so it fits in the return value and
+	// needs no buffer. Codes are device-native -- scancodes for the keyboard -- and sorted
+	// ascending, the same order the mod stores them in.
+	struct Chord
+	{
+		Device        device;    // meaningless when keyCount is 0
+		std::uint32_t keyCount;  // 0 = the entry is not bound to anything
+		std::uint32_t keys[2];
+	};
+	static_assert(sizeof(Chord) == 16);
+
 	// Interface version 1. Methods are safe to call from an input handler on the main
 	// thread; everything is copied out under the store's lock.
 	class IVersion1
@@ -76,12 +87,13 @@ namespace STB::HotkeySystem
 
 		// What pressing a_key on a_device would fire at this instant, taking the keys
 		// currently held into account -- so a chord resolves the same way it would for a
-		// real press. Writes up to a_max entries and returns how many the binding actually
-		// holds, which may exceed a_max if the key carries a large group; 0 means the key
-		// is bound to nothing.
+		// real press. Call it while handling the key-down event, not later: the answer
+		// depends on what is held right now.
 		//
-		// Call it while handling the key-down event, not later: the answer depends on what
-		// is held right now.
+		// A key can carry a group of any size, so this one does need a buffer you own:
+		// nothing that grows can be returned across a DLL boundary without agreeing on an
+		// allocator. Writes up to a_max entries and returns how many there actually are,
+		// which may exceed a_max -- 0 means the key is bound to nothing.
 		[[nodiscard]] virtual std::uint32_t Resolve(Device a_device, std::uint32_t a_key,
 			Binding* a_out, std::uint32_t a_max) const noexcept = 0;
 
@@ -98,24 +110,20 @@ namespace STB::HotkeySystem
 		[[nodiscard]] virtual bool EquipNow(const Binding& a_binding) const noexcept = 0;
 
 		// The other direction: which key an entry sits on, for drawing it on a row or a HUD.
-		// Writes up to a_max scancodes -- a chord is at most two -- and returns how many
-		// there are; 0 means the entry is not bound, so this doubles as "is it bound at
-		// all", with a_out null and a_max 0 if that is all you need. a_device, when not
-		// null, receives the device those codes belong to.
+		// keyCount 0 means the entry is not bound, so this is also how you ask whether it
+		// is bound at all.
 		//
 		// By base form: any instance of it will do. If the player has a plain sword on one
 		// key and an enchanted copy of the same base on another, you get whichever the
 		// lookup reaches first -- fine for "does this form have a hotkey", wrong for
 		// labelling a specific inventory row.
-		[[nodiscard]] virtual std::uint32_t GetHotkey(std::uint32_t a_form, std::uint32_t* a_out,
-			std::uint32_t a_max, Device* a_device) const noexcept = 0;
+		[[nodiscard]] virtual Chord GetHotkey(std::uint32_t a_form) const noexcept = 0;
 
 		// By exact instance, which is what a row in an item list needs: fill in `ench` and
 		// `health` from the row's extra data (0 and 0 for a plain copy) and only the key
 		// bound to that copy comes back. `hands` is ignored -- it describes the binding, not
 		// the item. A Binding handed out by Resolve round-trips through here unchanged.
-		[[nodiscard]] virtual std::uint32_t GetHotkeyExact(const Binding& a_entry, std::uint32_t* a_out,
-			std::uint32_t a_max, Device* a_device) const noexcept = 0;
+		[[nodiscard]] virtual Chord GetHotkeyExact(const Binding& a_entry) const noexcept = 0;
 
 	protected:
 		~IVersion1() = default;  // owned by the provider; consumers must not delete it
