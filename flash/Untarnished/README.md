@@ -1,7 +1,7 @@
 # Untarnished UI — second set
 
 The other set that ships with the mod. Pick this one if you run
-[Untarnished UI](https://www.nexusmods.com/skyrimspecialedition/mods/89044); pick
+[Untarnished UI](https://www.nexusmods.com/skyrimspecialedition/mods/75188); pick
 [SkyUI](../SkyUI/README.md) otherwise.
 
 Unlike SkyUI, Untarnished has no standalone `buttonart.swf` — its keycaps live **inside**
