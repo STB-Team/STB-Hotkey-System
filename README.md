@@ -32,7 +32,9 @@ truth; nothing is stored on the item, and bindings live in the co-save.
 - By default, pre-existing vanilla hotkeys are migrated to this system when a save is loaded.
 - Optional warning before assigning a key already used by a gameplay control.
 - English and Russian interface text; additional languages can be added with a translation file.
-- A [plugin API](api/README.md) other SKSE mods can read bindings through.
+- A [plugin API](api/README.md) other SKSE mods can read bindings through. A hotkey on a
+  shout or power equips it; STB Quick Hotkey Cast uses the API to also fire it on the same
+  press.
 
 ## Building
 
@@ -52,8 +54,9 @@ keycap with no rebuild. Two sets are built here — from SkyUI's button art (the
 from Untarnished UI's. See [`flash/README.md`](flash/README.md) for the frame-layout
 contract and a step-by-step guide to adapting it to another UI overhaul.
 
-`.\package.ps1` stages the FOMOD-installable tree (plugin + INI + translations, then a
-choice of keycap set) into `package/`.
+`.\package.ps1` stages a release tree into `package/`: plugin, INI and translations,
+plus a FOMOD that offers the two keycap sets. The Nexus release ships them as separate
+downloads instead, so the installer is optional -- the script builds it either way.
 
 ## Configuration
 

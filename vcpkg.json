@@ -1,8 +1,8 @@
 {
-  "name": "stb-features",
+  "name": "stb-hotkey-system",
   "version-string": "1.0.0",
-  "description": "STB Features SKSE plugin",
-  "license": "MIT",
+  "description": "SKSE plugin: chord-based replacement for Skyrim's favorites hotkeys",
+  "license": "GPL-3.0-only",
   "dependencies": [
     "boost-atomic",
     "boost-stl-interfaces",
