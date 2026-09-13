@@ -40,7 +40,6 @@ namespace HKS
 
 		_rememberHand = ini.GetBoolValue("Gameplay", "bRememberHand", _rememberHand);
 		_equipMode = static_cast<int>(ini.GetLongValue("Gameplay", "iEquipMode", _equipMode));
-		_refresh3DOnDrawnSwap = ini.GetBoolValue("Gameplay", "bRefresh3DOnDrawnSwap", _refresh3DOnDrawnSwap);
 
 		_iconAfterName = ini.GetBoolValue("Icons", "bAfterName", _iconAfterName);
 		_iconScale = static_cast<float>(ini.GetDoubleValue("Icons", "fScale", _iconScale));

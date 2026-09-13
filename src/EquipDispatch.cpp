@@ -5,7 +5,6 @@
 #include "Settings.h"
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <mutex>
 #include <utility>
@@ -23,39 +22,22 @@ namespace HKS::EquipDispatch
 			return form ? form->As<RE::BGSEquipSlot>() : nullptr;
 		}
 
-		// Items that sit in a hand and so have a mesh that has to be attached there.
-		[[nodiscard]] bool IsHandItem(RE::TESBoundObject* a_object)
+		// Forms for which "which hand" is a real choice: one-handed weapons, staves, spells
+		// and scrolls. A two-hander, bow or crossbow reports itself in both hands, so a bind
+		// made while holding one used to remember "both" -- and then got forced into the
+		// explicit right-hand slot instead of its own both-hands slot, a broken equip state
+		// the engine's "restore the previous weapon" logic then trips over. Shields and
+		// torches only ever go left and armour has no hand at all. None of those remember.
+		[[nodiscard]] bool SupportsHandMemory(RE::TESForm* a_form)
 		{
-			if (a_object->Is(RE::FormType::Weapon) || a_object->Is(RE::FormType::Light) ||
-				a_object->Is(RE::FormType::Scroll)) {
-				return true;
+			if (!a_form) {
+				return false;
 			}
-			auto* armo = a_object->As<RE::TESObjectARMO>();
-			return armo && armo->IsShield();
-		}
-
-		// Re-attach the player's models once the equips of this press have landed. Several
-		// hand equips in one press -- a dual-wield pair, a group -- share a single refresh:
-		// the flag coalesces them, and the task runs on the next pass of the queue, after
-		// every equip made in this one.
-		std::atomic<bool> g_refreshPending{ false };
-
-		void ScheduleModelRefresh()
-		{
-			if (g_refreshPending.exchange(true)) {
-				return;
+			if (auto* weap = a_form->As<RE::TESObjectWEAP>()) {
+				return weap->IsOneHandedSword() || weap->IsOneHandedDagger() ||
+				       weap->IsOneHandedAxe() || weap->IsOneHandedMace() || weap->IsStaff();
 			}
-			auto* task = SKSE::GetTaskInterface();
-			if (!task) {
-				g_refreshPending.store(false);
-				return;
-			}
-			task->AddTask([]() {
-				g_refreshPending.store(false);
-				if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-					player->Update3DModel();
-				}
-			});
+			return a_form->Is(RE::FormType::Spell) || a_form->Is(RE::FormType::Scroll);
 		}
 
 		// Every item equip goes through here.
@@ -74,8 +56,16 @@ namespace HKS::EquipDispatch
 		//    our own tracker right after the fix above shipped.
 		//
 		// So by default the mode follows the draw state: immediate while sheathed, where
-		// there is no animation to fight, queued while drawn. iEquipMode overrides that for
-		// testing, and a drawn hand swap can additionally re-attach the models next frame.
+		// there is no animation to fight, queued while drawn. iEquipMode overrides that.
+		//
+		// The flag is confirmed in the binary: in the equip core (REL::ID 37963) the byte
+		// it lands in, params+0x20, picks Character::sub_1405F82E0 over sub_14060B9E0.
+		// CommonLib's ObjectEquipParams labels that byte playEquipSounds; the name is wrong.
+		// The engine's own re-equip of the other hand (REL::ID 37957) takes the direct path.
+		//
+		// Re-attaching the player's models after a drawn swap (Update3DModel) was tried as
+		// well and dropped: it strips the enchantment glow off weapons, and the draw-state
+		// switch alone was enough.
 		//
 		// Safe on either path because every caller is on the main thread: hotkey fires run
 		// from the SKSE task queue, EquipNow from an input handler.
@@ -103,9 +93,6 @@ namespace HKS::EquipDispatch
 				true,   // playSounds
 				false); // applyNow
 
-			if (drawn && Settings::Refresh3DOnDrawnSwap() && a_actor->IsPlayerRef() && IsHandItem(a_object)) {
-				ScheduleModelRefresh();
-			}
 		}
 
 		void EquipSpellForm(RE::PlayerCharacter* a_player, RE::ActorEquipManager* a_em,
@@ -410,6 +397,10 @@ namespace HKS::EquipDispatch
 					const bool inRight = proc && proc->GetEquippedRightHand() == form;
 					const bool inLeft = proc && proc->GetEquippedLeftHand() == form;
 
+					// Checked here as well as at assignment, so a bind saved before the
+					// check existed (a two-hander remembering "both") is ignored too.
+					const bool handMemory = a_id.hands != kHandNone && SupportsHandMemory(form);
+
 					auto* weap = form->As<RE::TESObjectWEAP>();
 					const bool dualWield = weap &&
 					                       (weap->IsOneHandedSword() || weap->IsOneHandedDagger() ||
@@ -423,7 +414,7 @@ namespace HKS::EquipDispatch
 					// rather than uid, so it still fires when a mod (e.g. Wheeler) stamps a
 					// unique ExtraUniqueID on every weapon copy -- otherwise our bind reads
 					// as one distinct instance and the toggle below just puts it away.
-					if (a_id.hands == kHandNone && dualWield && (inRight != inLeft) &&
+					if (!handMemory && dualWield && (inRight != inLeft) &&
 						CountMatchingInstances(bound, a_id.ench, a_id.health) >= 2) {
 						constexpr RE::FormID kRight = 0x13F42;
 						constexpr RE::FormID kLeft = 0x13F43;
@@ -438,7 +429,7 @@ namespace HKS::EquipDispatch
 					// Assigned while the item was in hand, so it goes back to that hand
 					// rather than to whichever one the engine feels like. Still a toggle:
 					// pressing it while worn puts it away, same as everything else.
-					if (a_id.hands != kHandNone) {
+					if (handMemory) {
 						if (IsWornNow(player, form, bound, a_id, xl)) {
 							em->UnequipObject(player, bound, xl);
 						} else {
@@ -646,6 +637,9 @@ namespace HKS::EquipDispatch
 	{
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		if (!player || !a_form) {
+			return kHandNone;
+		}
+		if (!SupportsHandMemory(a_form)) {
 			return kHandNone;
 		}
 		std::uint8_t mask = kHandNone;
