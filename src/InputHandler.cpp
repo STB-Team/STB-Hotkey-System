@@ -64,6 +64,9 @@ namespace HKS
 		_capDown.clear();
 		_capTarget = {};
 
+		// Menu control keys are read per menu instance; a new menu may bind different ones.
+		MenuAssign::InvalidateMenuKeys();
+
 		// On open, reconcile bindings with favorite state: a hotkey whose item the player
 		// un-favorited (vanilla F) drops its binding + keycap now, instead of lingering and
 		// reappearing when the item next returns to the inventory. Done on open only, so it
@@ -250,8 +253,10 @@ namespace HKS
 		const bool          blockingOverlay = ui && (ui->IsMenuOpen(RE::Console::MENU_NAME) ||
                                               ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME));
 		const bool          assignOpen = MenuAssign::IsAssignMenuOpen() && !blockingOverlay;
-		const std::uint32_t modKey = Settings::AssignModifier();
-		const std::uint32_t groupKey = Settings::GroupModifier();
+		// A modifier the open menu uses for its own controls is not ours in that menu -- see
+		// MenuAssign::MenuUsesKey. 0 means "no such modifier here".
+		const std::uint32_t modKey = MenuAssign::UsableModifier(Settings::AssignModifier());
+		const std::uint32_t groupKey = MenuAssign::UsableModifier(Settings::GroupModifier());
 
 		if (!assignOpen && _capturing) {  // menu closed mid-capture -> abandon
 			_capturing = false;
@@ -287,7 +292,7 @@ namespace HKS
 				// chord already holds. Which one opened the session decides for the whole
 				// hold, so the meaning can't change halfway through a bind.
 				const bool isModKey = device == RE::INPUT_DEVICE::kKeyboard &&
-				                      (idCode == modKey || (groupKey != 0 && idCode == groupKey));
+				                      ((modKey != 0 && idCode == modKey) || (groupKey != 0 && idCode == groupKey));
 				if (isModKey) {
 					if (button->IsDown() && !_capturing) {
 						// Open a capture session. The target is NOT locked here -- it's

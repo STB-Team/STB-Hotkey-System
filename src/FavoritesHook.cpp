@@ -3,6 +3,7 @@
 #include "Favorites.h"
 #include "HotkeyManager.h"
 #include "InputHandler.h"
+#include "MenuAssign.h"
 #include "Settings.h"
 
 #include <string>
@@ -16,10 +17,11 @@ namespace HKS
 		// Either assign modifier: the plain one or the group one.
 		bool AnyModifierHeld()
 		{
-			auto* input = InputHandler::GetSingleton();
-			return input->IsHeld(RE::INPUT_DEVICE::kKeyboard, Settings::AssignModifier()) ||
-			       (Settings::GroupModifier() != 0 &&
-				       input->IsHeld(RE::INPUT_DEVICE::kKeyboard, Settings::GroupModifier()));
+			auto*      input = InputHandler::GetSingleton();
+			const auto assignKey = MenuAssign::UsableModifier(Settings::AssignModifier());
+			const auto groupKey = MenuAssign::UsableModifier(Settings::GroupModifier());
+			return (assignKey != 0 && input->IsHeld(RE::INPUT_DEVICE::kKeyboard, assignKey)) ||
+			       (groupKey != 0 && input->IsHeld(RE::INPUT_DEVICE::kKeyboard, groupKey));
 		}
 
 		// Lower sorts first: modifiers (Ctrl, Alt, Shift) ahead of normal keys.

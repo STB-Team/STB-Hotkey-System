@@ -77,10 +77,11 @@ namespace HKS
 		if (!Armed()) {
 			return false;
 		}
-		auto* input = InputHandler::GetSingleton();
-		return input->IsHeld(RE::INPUT_DEVICE::kKeyboard, Settings::AssignModifier()) ||
-		       (Settings::GroupModifier() != 0 &&
-			       input->IsHeld(RE::INPUT_DEVICE::kKeyboard, Settings::GroupModifier()));
+		auto*      input = InputHandler::GetSingleton();
+		const auto assignKey = MenuAssign::UsableModifier(Settings::AssignModifier());
+		const auto groupKey = MenuAssign::UsableModifier(Settings::GroupModifier());
+		return (assignKey != 0 && input->IsHeld(RE::INPUT_DEVICE::kKeyboard, assignKey)) ||
+		       (groupKey != 0 && input->IsHeld(RE::INPUT_DEVICE::kKeyboard, groupKey));
 	}
 
 	RE::BSEventNotifyControl MenuInputBlock::ProcessEvent(
@@ -93,8 +94,9 @@ namespace HKS
 		}
 
 		const bool          armed = Armed();
-		const std::uint32_t assignKey = Settings::AssignModifier();
-		const std::uint32_t groupKey = Settings::GroupModifier();
+		// A modifier the menu uses for its own controls is left entirely to the menu.
+		const std::uint32_t assignKey = armed ? MenuAssign::UsableModifier(Settings::AssignModifier()) : 0;
+		const std::uint32_t groupKey = armed ? MenuAssign::UsableModifier(Settings::GroupModifier()) : 0;
 		auto*               input = InputHandler::GetSingleton();
 		const auto*         ue = RE::UserEvents::GetSingleton();
 
@@ -102,7 +104,7 @@ namespace HKS
 		// MenuControls has been through the chain, so it lags by one dispatch; it is kept in
 		// step below as the chain itself presses and releases the modifiers, so a modifier
 		// and a key landing in the same frame still resolve in the right order.
-		bool assignHeld = armed && input->IsHeld(RE::INPUT_DEVICE::kKeyboard, assignKey);
+		bool assignHeld = armed && assignKey != 0 && input->IsHeld(RE::INPUT_DEVICE::kKeyboard, assignKey);
 		bool groupHeld = armed && groupKey != 0 && input->IsHeld(RE::INPUT_DEVICE::kKeyboard, groupKey);
 
 		// Every event is walked -- tracking has to see presses that go through while nothing
@@ -139,7 +141,7 @@ namespace HKS
 
 				if (armed && button->device.get() == RE::INPUT_DEVICE::kKeyboard) {
 					const auto id = button->GetIDCode();
-					if (id == assignKey) {
+					if (assignKey != 0 && id == assignKey) {
 						assignHeld = button->IsPressed();
 					}
 					if (groupKey != 0 && id == groupKey) {

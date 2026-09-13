@@ -103,12 +103,15 @@ namespace HKS::BottomBarHint
 					return;
 				}
 
-				bool added = AddHint(a_params.movie, panel,
-					Localization::Get("$STB_HK_Hint_Assign"), Settings::AssignModifier());
-				if (Settings::GroupModifier() != 0) {
-					added = AddHint(a_params.movie, panel,
-								Localization::Get("$STB_HK_Hint_Group"), Settings::GroupModifier()) ||
-					        added;
+				// No hint for a modifier the menu uses itself -- it does nothing of ours there.
+				const auto assignKey = MenuAssign::UsableModifier(Settings::AssignModifier());
+				const auto groupKey = MenuAssign::UsableModifier(Settings::GroupModifier());
+				bool       added = false;
+				if (assignKey != 0) {
+					added = AddHint(a_params.movie, panel, Localization::Get("$STB_HK_Hint_Assign"), assignKey);
+				}
+				if (groupKey != 0) {
+					added = AddHint(a_params.movie, panel, Localization::Get("$STB_HK_Hint_Group"), groupKey) || added;
 				}
 				if (!added) {
 					return;
