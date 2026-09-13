@@ -22,6 +22,28 @@ namespace HKS::EquipDispatch
 			return form ? form->As<RE::BGSEquipSlot>() : nullptr;
 		}
 
+		// Every item equip goes through here, applied now rather than queued.
+		//
+		// EquipObject defaults to queueEquip = true, which parks the request in the actor's
+		// equip queue. After a bow or other two-hander has just been put away, that queue
+		// runs before the biped model has caught up, and a shield or torch going back into
+		// the left hand ends up equipped but never attached -- the invisible shield every
+		// hotkey mod gets reported for. Applying immediately keeps the model in step. The
+		// fix and the diagnosis come from RavenKZP (Immersive Weapon Switch), posted on
+		// Extended Hotkey System's bug tracker.
+		//
+		// Safe here because every caller is already on the main thread: hotkey fires run
+		// from the SKSE task queue, and EquipNow from an input handler.
+		void EquipImmediate(RE::ActorEquipManager* a_em, RE::Actor* a_actor, RE::TESBoundObject* a_object,
+			RE::ExtraDataList* a_xl = nullptr, std::uint32_t a_count = 1, const RE::BGSEquipSlot* a_slot = nullptr)
+		{
+			a_em->EquipObject(a_actor, a_object, a_xl, a_count, a_slot,
+				false,  // queueEquip
+				false,  // forceEquip
+				true,   // playSounds
+				false); // applyNow
+		}
+
 		void EquipSpellForm(RE::PlayerCharacter* a_player, RE::ActorEquipManager* a_em,
 			RE::SpellItem* a_spell, std::uint8_t a_hands)
 		{
@@ -220,14 +242,14 @@ namespace HKS::EquipDispatch
 			constexpr RE::FormID kLeft = 0x13F43;
 
 			if (a_id.hands == kHandBoth) {
-				a_em->EquipObject(a_player, a_bound, a_xl, 1, EquipSlot(kRight));
+				EquipImmediate(a_em, a_player, a_bound, a_xl, 1, EquipSlot(kRight));
 				if (CountMatchingInstances(a_bound, a_id.ench, a_id.health) >= 2) {
-					a_em->EquipObject(a_player, a_bound,
+					EquipImmediate(a_em, a_player, a_bound,
 						FindUnwornInstance(a_bound, a_id.ench, a_id.health, a_xl), 1, EquipSlot(kLeft));
 				}
 				return;
 			}
-			a_em->EquipObject(a_player, a_bound, a_xl, 1,
+			EquipImmediate(a_em, a_player, a_bound, a_xl, 1,
 				EquipSlot((a_id.hands & kHandRight) != 0 ? kRight : kLeft));
 		}
 
@@ -342,7 +364,7 @@ namespace HKS::EquipDispatch
 						constexpr RE::FormID kRight = 0x13F42;
 						constexpr RE::FormID kLeft = 0x13F43;
 						auto* freeXl = FindUnwornInstance(bound, a_id.ench, a_id.health);
-						em->EquipObject(player, bound, freeXl, 1, EquipSlot(inRight ? kLeft : kRight));
+						EquipImmediate(em, player, bound, freeXl, 1, EquipSlot(inRight ? kLeft : kRight));
 						break;
 					}
 
@@ -371,7 +393,7 @@ namespace HKS::EquipDispatch
 						if (IsWornNow(player, form, bound, a_id, xl)) {
 							em->UnequipObject(player, bound, xl);
 						} else {
-							em->EquipObject(player, bound, xl);
+							EquipImmediate(em, player, bound, xl);
 						}
 						break;
 					}
@@ -382,7 +404,7 @@ namespace HKS::EquipDispatch
 					if (IsWornNow(player, form, bound, a_id, nullptr)) {
 						em->UnequipObject(player, bound, nullptr);
 					} else {
-						em->EquipObject(player, bound, nullptr);
+						EquipImmediate(em, player, bound, nullptr);
 					}
 				}
 				break;
@@ -461,13 +483,13 @@ namespace HKS::EquipDispatch
 					return;
 				}
 				if (!oneHanded) {  // greatsword, bow, crossbow -- takes everything
-					a_em->EquipObject(a_player, bound, xl);
+					EquipImmediate(a_em, a_player, bound, xl);
 					a_hands.right = a_hands.left = true;
 				} else if (!a_hands.right) {
-					a_em->EquipObject(a_player, bound, xl, 1, EquipSlot(kRight));
+					EquipImmediate(a_em, a_player, bound, xl, 1, EquipSlot(kRight));
 					a_hands.right = true;
 				} else if (!a_hands.left) {
-					a_em->EquipObject(a_player, bound, xl, 1, EquipSlot(kLeft));
+					EquipImmediate(a_em, a_player, bound, xl, 1, EquipSlot(kLeft));
 					a_hands.left = true;
 				}
 				return;
@@ -479,7 +501,7 @@ namespace HKS::EquipDispatch
 			const bool leftOnly = (armo && armo->IsShield()) || form->Is(RE::FormType::Light);
 			if (leftOnly) {
 				if (!a_hands.left) {
-					a_em->EquipObject(a_player, bound, xl);
+					EquipImmediate(a_em, a_player, bound, xl);
 					a_hands.left = true;
 				}
 				return;
@@ -488,10 +510,10 @@ namespace HKS::EquipDispatch
 			// A scroll is cast from a hand like a spell.
 			if (form->Is(RE::FormType::Scroll)) {
 				if (!a_hands.right) {
-					a_em->EquipObject(a_player, bound, xl, 1, EquipSlot(kRight));
+					EquipImmediate(a_em, a_player, bound, xl, 1, EquipSlot(kRight));
 					a_hands.right = true;
 				} else if (!a_hands.left) {
-					a_em->EquipObject(a_player, bound, xl, 1, EquipSlot(kLeft));
+					EquipImmediate(a_em, a_player, bound, xl, 1, EquipSlot(kLeft));
 					a_hands.left = true;
 				}
 				return;
@@ -499,7 +521,7 @@ namespace HKS::EquipDispatch
 
 			// Armour, ammo, potions, food -- no hand bookkeeping. Potions and food are
 			// consumed here, which is what a group like "armour + healing potion" is for.
-			a_em->EquipObject(a_player, bound, xl);
+			EquipImmediate(a_em, a_player, bound, xl);
 		}
 
 		// Take the whole set off. Consumables are skipped -- stripping a loadout must not
