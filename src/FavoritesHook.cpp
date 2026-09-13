@@ -13,6 +13,15 @@ namespace HKS
 	{
 		constexpr const char* kItemListPath = "_root.MenuHolder.Menu_mc.itemList";
 
+		// Either assign modifier: the plain one or the group one.
+		bool AnyModifierHeld()
+		{
+			auto* input = InputHandler::GetSingleton();
+			return input->IsHeld(RE::INPUT_DEVICE::kKeyboard, Settings::AssignModifier()) ||
+			       (Settings::GroupModifier() != 0 &&
+				       input->IsHeld(RE::INPUT_DEVICE::kKeyboard, Settings::GroupModifier()));
+		}
+
 		// Lower sorts first: modifiers (Ctrl, Alt, Shift) ahead of normal keys.
 		int DisplayRank(std::uint32_t a_sc)
 		{
@@ -137,9 +146,12 @@ namespace HKS
 				// Never claim the menu-cancel control -- it must always reach vanilla so
 				// the menu can be closed even if the modifier is seen as held (a stuck
 				// key would otherwise make the menu swallow every keystroke).
+				// Presses only. A release is always left to vanilla: claiming it would keep it
+				// from the menu, and a menu that saw the press but never the release keeps
+				// that key held for good (see MenuInputBlock).
 				auto*      ue = RE::UserEvents::GetSingleton();
 				const bool isCancel = ue && button->userEvent == ue->cancel;
-				if (!isCancel && InputHandler::GetSingleton()->IsHeld(RE::INPUT_DEVICE::kKeyboard, Settings::AssignModifier())) {
+				if (button->IsPressed() && !isCancel && AnyModifierHeld()) {
 					return true;
 				}
 			}
@@ -153,12 +165,14 @@ namespace HKS
 		// modifier release, which vanilla CanProcess would otherwise swallow).
 		if (a_event && a_event->device.get() == RE::INPUT_DEVICE::kKeyboard) {
 			// The cancel control is never swallowed -- the menu must stay closeable.
+			// Releases always pass, for the same reason CanProcess never claims them: the
+			// menu's own press/release bookkeeping -- vanilla FavoritesMenu latches on the
+			// press it acts on and only unlatches on the release -- must stay paired.
 			auto*      ue = RE::UserEvents::GetSingleton();
 			const bool isCancel = ue && a_event->userEvent == ue->cancel;
-			if (!isCancel) {
+			if (!isCancel && a_event->IsPressed()) {
 				const std::uint32_t id = a_event->GetIDCode();
-				const bool          modHeld =
-					InputHandler::GetSingleton()->IsHeld(RE::INPUT_DEVICE::kKeyboard, Settings::AssignModifier());
+				const bool          modHeld = AnyModifierHeld();
 
 				// While assigning, swallow everything so vanilla never reacts; and always
 				// kill vanilla number-key (1..0) assignment -- our system owns hotkeys now.
