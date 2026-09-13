@@ -5,6 +5,7 @@
 #include "Settings.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <mutex>
 #include <utility>
@@ -22,26 +23,89 @@ namespace HKS::EquipDispatch
 			return form ? form->As<RE::BGSEquipSlot>() : nullptr;
 		}
 
-		// Every item equip goes through here, applied now rather than queued.
+		// Items that sit in a hand and so have a mesh that has to be attached there.
+		[[nodiscard]] bool IsHandItem(RE::TESBoundObject* a_object)
+		{
+			if (a_object->Is(RE::FormType::Weapon) || a_object->Is(RE::FormType::Light) ||
+				a_object->Is(RE::FormType::Scroll)) {
+				return true;
+			}
+			auto* armo = a_object->As<RE::TESObjectARMO>();
+			return armo && armo->IsShield();
+		}
+
+		// Re-attach the player's models once the equips of this press have landed. Several
+		// hand equips in one press -- a dual-wield pair, a group -- share a single refresh:
+		// the flag coalesces them, and the task runs on the next pass of the queue, after
+		// every equip made in this one.
+		std::atomic<bool> g_refreshPending{ false };
+
+		void ScheduleModelRefresh()
+		{
+			if (g_refreshPending.exchange(true)) {
+				return;
+			}
+			auto* task = SKSE::GetTaskInterface();
+			if (!task) {
+				g_refreshPending.store(false);
+				return;
+			}
+			task->AddTask([]() {
+				g_refreshPending.store(false);
+				if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+					player->Update3DModel();
+				}
+			});
+		}
+
+		// Every item equip goes through here.
 		//
-		// EquipObject defaults to queueEquip = true, which parks the request in the actor's
-		// equip queue. After a bow or other two-hander has just been put away, that queue
-		// runs before the biped model has caught up, and a shield or torch going back into
-		// the left hand ends up equipped but never attached -- the invisible shield every
-		// hotkey mod gets reported for. Applying immediately keeps the model in step. The
-		// fix and the diagnosis come from RavenKZP (Immersive Weapon Switch), posted on
-		// Extended Hotkey System's bug tracker.
+		// Hand swaps lose their mesh in two opposite ways, and EquipObject's queueEquip flag
+		// moves the failure between them rather than removing it:
 		//
-		// Safe here because every caller is already on the main thread: hotkey fires run
-		// from the SKSE task queue, and EquipNow from an input handler.
+		//  - queued (the default): after a bow or other two-hander has been put away, the
+		//    queue runs before the biped model catches up, so a shield or torch going back
+		//    into the left hand is equipped but never attached. Diagnosis and the
+		//    immediate-equip fix from RavenKZP (Immersive Weapon Switch), on Extended Hotkey
+		//    System's bug tracker.
+		//  - immediate: with weapons DRAWN the swap happens in the middle of the draw/attack
+		//    animation the queue exists to sequence, and the new weapon -- the second of a
+		//    dual pair, or a two-hander replacing another -- comes in invisible. Reported on
+		//    our own tracker right after the fix above shipped.
+		//
+		// So by default the mode follows the draw state: immediate while sheathed, where
+		// there is no animation to fight, queued while drawn. iEquipMode overrides that for
+		// testing, and a drawn hand swap can additionally re-attach the models next frame.
+		//
+		// Safe on either path because every caller is on the main thread: hotkey fires run
+		// from the SKSE task queue, EquipNow from an input handler.
 		void EquipImmediate(RE::ActorEquipManager* a_em, RE::Actor* a_actor, RE::TESBoundObject* a_object,
 			RE::ExtraDataList* a_xl = nullptr, std::uint32_t a_count = 1, const RE::BGSEquipSlot* a_slot = nullptr)
 		{
+			auto*      state = a_actor->AsActorState();
+			const bool drawn = state && state->IsWeaponDrawn();
+
+			bool queue = drawn;
+			switch (Settings::EquipMode()) {
+			case 1:
+				queue = true;
+				break;
+			case 2:
+				queue = false;
+				break;
+			default:
+				break;
+			}
+
 			a_em->EquipObject(a_actor, a_object, a_xl, a_count, a_slot,
-				false,  // queueEquip
+				queue,  // queueEquip
 				false,  // forceEquip
 				true,   // playSounds
 				false); // applyNow
+
+			if (drawn && Settings::Refresh3DOnDrawnSwap() && a_actor->IsPlayerRef() && IsHandItem(a_object)) {
+				ScheduleModelRefresh();
+			}
 		}
 
 		void EquipSpellForm(RE::PlayerCharacter* a_player, RE::ActorEquipManager* a_em,

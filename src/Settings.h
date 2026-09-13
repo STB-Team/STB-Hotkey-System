@@ -75,6 +75,17 @@ namespace HKS
 		// keeps the old behaviour.
 		static bool RememberHand() { return _rememberHand; }
 
+		// How item equips are applied (a testing switch while hand-swap visuals are settled):
+		//   0 = auto: immediately while weapons are sheathed, through the actor's equip
+		//       queue while they are drawn
+		//   1 = always queued (vanilla behaviour)
+		//   2 = always immediate
+		static int EquipMode() { return _equipMode; }
+
+		// After a hand item is equipped with weapons drawn, re-attach the player's models on
+		// the next frame so a swap made mid-animation cannot leave a mesh missing.
+		static bool Refresh3DOnDrawnSwap() { return _refresh3DOnDrawnSwap; }
+
 		// Keycap rendering (tweak live: edit the INI, reopen the menu). Each list lays out
 		// differently, so Show/X/Gap are per menu kind; the rest is shared.
 		enum class MenuKind
@@ -147,6 +158,8 @@ namespace HKS
 		static inline bool          _warnKeyConflict = true;
 		static inline bool          _debugLog = false;
 		static inline bool          _rememberHand = true;
+		static inline int           _equipMode = 0;
+		static inline bool          _refresh3DOnDrawnSwap = true;
 		static inline bool          _iconsInv = true;
 		static inline bool          _iconsCont = true;
 		static inline bool          _iconsMagic = true;
