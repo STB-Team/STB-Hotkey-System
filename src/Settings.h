@@ -75,11 +75,11 @@ namespace HKS
 		// keeps the old behaviour.
 		static bool RememberHand() { return _rememberHand; }
 
-		// How item equips are applied:
-		//   0 = auto: immediately while weapons are sheathed, through the actor's equip
-		//       queue while they are drawn
-		//   1 = always queued (vanilla behaviour)
-		//   2 = always immediate
+		// How item equips are applied (hidden, for chasing equip bugs):
+		//   0 = the way the game's own favorites hotkeys do it: immediately, then the
+		//       model update and shield step FavoritesMenu::UseQuickslotItem runs
+		//   1 = immediately while weapons are sheathed, queued while drawn, no model update
+		//   2 = always queued (EquipObject's default)
 		static int EquipMode() { return _equipMode; }
 
 		// Keycap rendering (tweak live: edit the INI, reopen the menu). Each list lays out

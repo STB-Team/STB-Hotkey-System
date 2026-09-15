@@ -40,51 +40,138 @@ namespace HKS::EquipDispatch
 			return a_form->Is(RE::FormType::Spell) || a_form->Is(RE::FormType::Scroll);
 		}
 
+		// Does the item fill the race's shield slot? Actor::GetShieldBiped (REL::ID 19204)
+		// reads the slot off the race; the menu tests the armour's biped mask against it.
+		[[nodiscard]] bool FillsShieldSlot(RE::Actor* a_actor, RE::TESBoundObject* a_object)
+		{
+			auto* armo = a_object->As<RE::TESObjectARMO>();
+			auto* race = armo ? a_actor->GetRace() : nullptr;
+			if (!race) {
+				return false;
+			}
+			const auto slot = static_cast<std::uint32_t>(race->data.shieldObject.get());
+			return slot < 32 && (std::to_underlying(armo->GetSlotMask()) & (1u << slot)) != 0;
+		}
+
+		// What the game does after every favorites equip or unequip, in the menu
+		// (FavoritesMenu::UseQuickslotItem, REL::ID 50654) and on hotkeys 1-8 alike: bring
+		// the actor's models up to date there and then, and for a shield run the step that
+		// sets its biped part's flags to match the weapon state (REL::ID 39347).
+		void FinishLikeVanilla(RE::Actor* a_actor, RE::TESBoundObject* a_object)
+		{
+			auto* process = a_actor->GetActorRuntimeData().currentProcess;
+			if (!process) {
+				return;
+			}
+			process->Update3DModel(a_actor);
+			if (FillsShieldSlot(a_actor, a_object)) {
+				using func_t = void (*)(RE::Actor*);
+				static REL::Relocation<func_t> shieldStep{ REL::RelocationID(39347, 40418) };
+				shieldStep(a_actor);
+			}
+		}
+
+		// The inventory stack an item is equipped from (a_worn = false) or taken off from
+		// (true), for binds that do not name an exact instance.
+		//
+		// The game's own toggle (REL::ID 37951) always hands EquipObject a stack's extra
+		// list, and the equip event is built from it: the reference handle and unique ID in
+		// that list are how Papyrus finds the script instance of the item in the inventory.
+		// Without a list the event names no instance, so an item's own OnEquipped never
+		// runs -- Hypercube's MISC item, which opens its storage chest from OnEquipped,
+		// worked from the inventory and did nothing from a hotkey.
+		[[nodiscard]] RE::ExtraDataList* StackList(RE::Actor* a_actor, RE::TESBoundObject* a_object, bool a_worn)
+		{
+			auto* changes = a_actor->GetInventoryChanges();
+			if (!changes || !changes->entryList) {
+				return nullptr;
+			}
+			for (auto* entry : *changes->entryList) {
+				if (!entry || entry->object != a_object || !entry->extraLists) {
+					continue;
+				}
+				for (auto* xl : *entry->extraLists) {
+					if (!xl) {
+						continue;
+					}
+					const bool worn = xl->HasType(RE::ExtraDataType::kWorn) || xl->HasType(RE::ExtraDataType::kWornLeft);
+					if (worn == a_worn) {
+						return xl;
+					}
+				}
+			}
+			return nullptr;
+		}
+
 		// Every item equip goes through here.
 		//
-		// Hand swaps lose their mesh in two opposite ways, and EquipObject's queueEquip flag
-		// moves the failure between them rather than removing it:
+		// The game's favorites never queue: both paths above equip through
+		// ActorEquipManager's toggle (REL::ID 37951) as EquipObject(..., slot, false, false,
+		// true, false) and finish with FinishLikeVanilla. Doing only half of that is what
+		// kept losing meshes:
 		//
-		//  - queued (the default): after a bow or other two-hander has been put away, the
-		//    queue runs before the biped model catches up, so a shield or torch going back
-		//    into the left hand is equipped but never attached. Diagnosis and the
-		//    immediate-equip fix from RavenKZP (Immersive Weapon Switch), on Extended Hotkey
+		//  - queued (EquipObject's default): after a bow or other two-hander has been put
+		//    away, a shield or torch going back into the left hand is equipped but never
+		//    attached. Diagnosis from RavenKZP (Immersive Weapon Switch), on Extended Hotkey
 		//    System's bug tracker.
-		//  - immediate: with weapons DRAWN the swap happens in the middle of the draw/attack
-		//    animation the queue exists to sequence, and the new weapon -- the second of a
-		//    dual pair, or a two-hander replacing another -- comes in invisible. Reported on
-		//    our own tracker right after the fix above shipped.
+		//  - immediate without the model update: with weapons drawn, the second of a dual
+		//    pair or a two-hander replacing another comes in invisible, and a shield next
+		//    to a right-hand weapon still does.
 		//
-		// So by default the mode follows the draw state: immediate while sheathed, where
-		// there is no animation to fight, queued while drawn. iEquipMode overrides that.
+		// A deferred Update3DModel after a queued swap was tried as well and stripped the
+		// enchantment glow off weapons; this is the synchronous one, right after an
+		// immediate equip, in the order the game uses. iEquipMode keeps the older modes.
 		//
-		// The flag is confirmed in the binary: in the equip core (REL::ID 37963) the byte
-		// it lands in, params+0x20, picks Character::sub_1405F82E0 over sub_14060B9E0.
-		// CommonLib's ObjectEquipParams labels that byte playEquipSounds; the name is wrong.
-		// The engine's own re-equip of the other hand (REL::ID 37957) takes the direct path.
+		// In the equip core (REL::ID 37963) the queue flag lands in params+0x20 and picks
+		// Character::sub_1405F82E0 over sub_14060B9E0. CommonLib's ObjectEquipParams calls
+		// that byte playEquipSounds; the name is wrong.
 		//
-		// Re-attaching the player's models after a drawn swap (Update3DModel) was tried as
-		// well and dropped: it strips the enchantment glow off weapons, and the draw-state
-		// switch alone was enough.
-		//
-		// Safe on either path because every caller is on the main thread: hotkey fires run
-		// from the SKSE task queue, EquipNow from an input handler.
-		void EquipImmediate(RE::ActorEquipManager* a_em, RE::Actor* a_actor, RE::TESBoundObject* a_object,
+		// Main thread only: hotkey fires run from the SKSE task queue, EquipNow from an
+		// input handler.
+		void EquipItem(RE::ActorEquipManager* a_em, RE::Actor* a_actor, RE::TESBoundObject* a_object,
 			RE::ExtraDataList* a_xl = nullptr, std::uint32_t a_count = 1, const RE::BGSEquipSlot* a_slot = nullptr)
 		{
-			auto*      state = a_actor->AsActorState();
-			const bool drawn = state && state->IsWeaponDrawn();
+			const auto mode = Settings::EquipMode();
 
-			bool queue = drawn;
-			switch (Settings::EquipMode()) {
-			case 1:
+			// Only wearables can go through the queue. The queued branch (REL::ID 36676)
+			// hands books, food and potions to the direct one and silently drops the rest --
+			// misc items, keys, soul gems -- which the direct branch would still turn into
+			// an equip event (the "cannot equip" message comes with it, as in vanilla).
+			// Mods listening for that event on a misc item need it to arrive.
+			const bool queueable = a_object->Is(RE::FormType::Weapon) || a_object->Is(RE::FormType::Armor) ||
+			                       a_object->Is(RE::FormType::Light) || a_object->Is(RE::FormType::Ammo) ||
+			                       a_object->Is(RE::FormType::Scroll) || a_object->Is(RE::FormType::Projectile);
+
+			bool queue = false;
+			if (queueable && mode == 1) {
+				auto* state = a_actor->AsActorState();
+				queue = state && state->IsWeaponDrawn();
+			} else if (queueable && mode == 2) {
 				queue = true;
-				break;
-			case 2:
-				queue = false;
-				break;
-			default:
-				break;
+			}
+
+			// The game's shield restore is broken, so do it here. Equipping a two-hander
+			// makes the player remember what was in each hand (lastOneHandItems: 0 = left,
+			// 1 = right); equipping a one-hand item afterwards gives back the other hand's.
+			// The equip worker (REL::ID 37974) decides which by comparing the item's slot to
+			// LeftHand -- but a shield's slot is Shield, whose parent is LeftHand, so it reads
+			// as a right-hand item: the remembered LEFT weapon comes back into the left hand
+			// and replaces the shield. Seen as sword+axe, then a bow, then a shield: the
+			// shield's key put a weapon in the left hand. So take the right-hand weapon out
+			// of that memory, clear it so the worker restores nothing, and put the weapon
+			// back into the right hand ourselves -- what the worker means to do.
+			RE::TESBoundObject* restoreRight = nullptr;
+			if (auto* armo = a_object->As<RE::TESObjectARMO>(); armo && armo->IsShield() && a_actor->IsPlayerRef()) {
+				auto& info = static_cast<RE::PlayerCharacter*>(a_actor)->GetInfoRuntimeData();
+				if (a_em->unk01) {  // the worker's own "restore the other hand" switch
+					restoreRight = info.lastOneHandItems[1];
+				}
+				info.lastOneHandItems[0] = nullptr;
+				info.lastOneHandItems[1] = nullptr;
+			}
+
+			if (!a_xl) {
+				a_xl = StackList(a_actor, a_object, false);
 			}
 
 			a_em->EquipObject(a_actor, a_object, a_xl, a_count, a_slot,
@@ -93,6 +180,60 @@ namespace HKS::EquipDispatch
 				true,   // playSounds
 				false); // applyNow
 
+			if (restoreRight) {
+				// Same conditions the worker's restore (REL::ID 37957) checks: still owned,
+				// and the hand it goes to is free.
+				auto*      process = a_actor->GetActorRuntimeData().currentProcess;
+				const auto counts = a_actor->GetInventoryCounts(
+					[&](RE::TESBoundObject& a_obj) { return std::addressof(a_obj) == restoreRight; });
+				if (process && !process->GetEquippedRightHand() && !counts.empty() && counts.begin()->second > 0) {
+					EquipItem(a_em, a_actor, restoreRight, nullptr, 1, EquipSlot(0x13F42));
+				}
+			}
+
+			if (mode == 0) {
+				FinishLikeVanilla(a_actor, a_object);
+			}
+		}
+
+		// Every item unequip goes through here, for the same reason.
+		void UnequipItem(RE::ActorEquipManager* a_em, RE::Actor* a_actor, RE::TESBoundObject* a_object,
+			RE::ExtraDataList* a_xl)
+		{
+			const bool vanilla = Settings::EquipMode() == 0;
+			if (!a_xl) {
+				a_xl = StackList(a_actor, a_object, true);
+			}
+			a_em->UnequipObject(a_actor, a_object, a_xl, 1, nullptr,
+				!vanilla,  // queueEquip
+				false,     // forceEquip
+				true,      // playSounds
+				false);    // applyNow
+			if (vanilla) {
+				FinishLikeVanilla(a_actor, a_object);
+			}
+		}
+
+		// A book cannot be equipped -- the equip core only plays its sound and sends the
+		// equip event. Favorite Misc Items lets books be favorited and reads them by hooking
+		// the call inside FavoritesMenu::UseQuickslotItem, which a hotkey here never goes
+		// through, so this does what that hook does: the equip call first, as the menu
+		// makes it, then a spell tome is learned and anything else is opened.
+		void UseBook(RE::PlayerCharacter* a_player, RE::ActorEquipManager* a_em, RE::TESObjectBOOK* a_book,
+			RE::ExtraDataList* a_xl)
+		{
+			EquipItem(a_em, a_player, a_book, a_xl);
+			if (a_book->TeachesSpell()) {
+				if (a_book->Read(a_player)) {
+					a_player->RemoveItem(a_book, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+				}
+				return;
+			}
+			RE::BSString text;
+			a_book->GetDescription(text, nullptr);
+			RE::NiMatrix3 rot{};
+			rot.SetEulerAnglesXYZ(-0.05f, -0.05f, 1.50f);
+			RE::BookMenu::OpenBookMenu(text, a_xl, nullptr, a_book, RE::NiPoint3{}, rot, 1.0f, true);
 		}
 
 		void EquipSpellForm(RE::PlayerCharacter* a_player, RE::ActorEquipManager* a_em,
@@ -293,14 +434,14 @@ namespace HKS::EquipDispatch
 			constexpr RE::FormID kLeft = 0x13F43;
 
 			if (a_id.hands == kHandBoth) {
-				EquipImmediate(a_em, a_player, a_bound, a_xl, 1, EquipSlot(kRight));
+				EquipItem(a_em, a_player, a_bound, a_xl, 1, EquipSlot(kRight));
 				if (CountMatchingInstances(a_bound, a_id.ench, a_id.health) >= 2) {
-					EquipImmediate(a_em, a_player, a_bound,
+					EquipItem(a_em, a_player, a_bound,
 						FindUnwornInstance(a_bound, a_id.ench, a_id.health, a_xl), 1, EquipSlot(kLeft));
 				}
 				return;
 			}
-			EquipImmediate(a_em, a_player, a_bound, a_xl, 1,
+			EquipItem(a_em, a_player, a_bound, a_xl, 1,
 				EquipSlot((a_id.hands & kHandRight) != 0 ? kRight : kLeft));
 		}
 
@@ -355,13 +496,15 @@ namespace HKS::EquipDispatch
 		}
 
 		// Part of a "loadout" for the group toggle: something that stays on until it is
-		// taken off. Potions, food and ingredients are used up instead, so they never keep
-		// a group from reading as fully equipped -- and are left alone when it is stripped.
+		// taken off. Potions and food are used up, books are read, and misc items, keys and
+		// soul gems only fire their equip event -- none of them is ever worn, so they must
+		// not keep a group from reading as fully equipped, and are left alone when it is
+		// stripped.
 		bool IsLoadoutGear(RE::TESForm* a_form)
 		{
-			return a_form->As<RE::TESBoundObject>() != nullptr &&
-			       !a_form->Is(RE::FormType::AlchemyItem) &&
-			       !a_form->Is(RE::FormType::Ingredient);
+			return a_form->Is(RE::FormType::Weapon) || a_form->Is(RE::FormType::Armor) ||
+			       a_form->Is(RE::FormType::Light) || a_form->Is(RE::FormType::Ammo) ||
+			       a_form->Is(RE::FormType::Scroll);
 		}
 
 		void EquipForm(const ItemId& a_id)
@@ -392,6 +535,10 @@ namespace HKS::EquipDispatch
 					if (!bound) {
 						break;
 					}
+					if (auto* book = form->As<RE::TESObjectBOOK>()) {
+						UseBook(player, em, book, FindInstanceList(bound, a_id));
+						break;
+					}
 
 					auto* proc = player->GetActorRuntimeData().currentProcess;
 					const bool inRight = proc && proc->GetEquippedRightHand() == form;
@@ -419,7 +566,7 @@ namespace HKS::EquipDispatch
 						constexpr RE::FormID kRight = 0x13F42;
 						constexpr RE::FormID kLeft = 0x13F43;
 						auto* freeXl = FindUnwornInstance(bound, a_id.ench, a_id.health);
-						EquipImmediate(em, player, bound, freeXl, 1, EquipSlot(inRight ? kLeft : kRight));
+						EquipItem(em, player, bound, freeXl, 1, EquipSlot(inRight ? kLeft : kRight));
 						break;
 					}
 
@@ -431,7 +578,7 @@ namespace HKS::EquipDispatch
 					// pressing it while worn puts it away, same as everything else.
 					if (handMemory) {
 						if (IsWornNow(player, form, bound, a_id, xl)) {
-							em->UnequipObject(player, bound, xl);
+							UnequipItem(em, player, bound, xl);
 						} else {
 							EquipToHands(player, em, bound, a_id, xl);
 						}
@@ -446,9 +593,9 @@ namespace HKS::EquipDispatch
 					// of switching.
 					if (xl) {
 						if (IsWornNow(player, form, bound, a_id, xl)) {
-							em->UnequipObject(player, bound, xl);
+							UnequipItem(em, player, bound, xl);
 						} else {
-							EquipImmediate(em, player, bound, xl);
+							EquipItem(em, player, bound, xl);
 						}
 						break;
 					}
@@ -457,9 +604,9 @@ namespace HKS::EquipDispatch
 					// Default toggle: equip if nothing of the kind is on, else take it off.
 					// "On" has to cover the armour slots too, not just the hands.
 					if (IsWornNow(player, form, bound, a_id, nullptr)) {
-						em->UnequipObject(player, bound, nullptr);
+						UnequipItem(em, player, bound, nullptr);
 					} else {
-						EquipImmediate(em, player, bound, nullptr);
+						EquipItem(em, player, bound, nullptr);
 					}
 				}
 				break;
@@ -528,6 +675,11 @@ namespace HKS::EquipDispatch
 			// a fungible bind, which lets the engine take any copy.
 			auto* xl = FindInstanceList(bound, a_id);
 
+			if (auto* book = form->As<RE::TESObjectBOOK>()) {
+				UseBook(a_player, a_em, book, xl);
+				return;
+			}
+
 			if (auto* weap = form->As<RE::TESObjectWEAP>()) {
 				const bool oneHanded = weap->IsOneHandedSword() || weap->IsOneHandedDagger() ||
 				                       weap->IsOneHandedAxe() || weap->IsOneHandedMace() || weap->IsStaff();
@@ -538,13 +690,13 @@ namespace HKS::EquipDispatch
 					return;
 				}
 				if (!oneHanded) {  // greatsword, bow, crossbow -- takes everything
-					EquipImmediate(a_em, a_player, bound, xl);
+					EquipItem(a_em, a_player, bound, xl);
 					a_hands.right = a_hands.left = true;
 				} else if (!a_hands.right) {
-					EquipImmediate(a_em, a_player, bound, xl, 1, EquipSlot(kRight));
+					EquipItem(a_em, a_player, bound, xl, 1, EquipSlot(kRight));
 					a_hands.right = true;
 				} else if (!a_hands.left) {
-					EquipImmediate(a_em, a_player, bound, xl, 1, EquipSlot(kLeft));
+					EquipItem(a_em, a_player, bound, xl, 1, EquipSlot(kLeft));
 					a_hands.left = true;
 				}
 				return;
@@ -556,7 +708,7 @@ namespace HKS::EquipDispatch
 			const bool leftOnly = (armo && armo->IsShield()) || form->Is(RE::FormType::Light);
 			if (leftOnly) {
 				if (!a_hands.left) {
-					EquipImmediate(a_em, a_player, bound, xl);
+					EquipItem(a_em, a_player, bound, xl);
 					a_hands.left = true;
 				}
 				return;
@@ -565,10 +717,10 @@ namespace HKS::EquipDispatch
 			// A scroll is cast from a hand like a spell.
 			if (form->Is(RE::FormType::Scroll)) {
 				if (!a_hands.right) {
-					EquipImmediate(a_em, a_player, bound, xl, 1, EquipSlot(kRight));
+					EquipItem(a_em, a_player, bound, xl, 1, EquipSlot(kRight));
 					a_hands.right = true;
 				} else if (!a_hands.left) {
-					EquipImmediate(a_em, a_player, bound, xl, 1, EquipSlot(kLeft));
+					EquipItem(a_em, a_player, bound, xl, 1, EquipSlot(kLeft));
 					a_hands.left = true;
 				}
 				return;
@@ -576,7 +728,7 @@ namespace HKS::EquipDispatch
 
 			// Armour, ammo, potions, food -- no hand bookkeeping. Potions and food are
 			// consumed here, which is what a group like "armour + healing potion" is for.
-			EquipImmediate(a_em, a_player, bound, xl);
+			EquipItem(a_em, a_player, bound, xl);
 		}
 
 		// Take the whole set off. Consumables are skipped -- stripping a loadout must not
@@ -591,7 +743,7 @@ namespace HKS::EquipDispatch
 					continue;
 				}
 				auto* bound = form->As<RE::TESBoundObject>();
-				a_em->UnequipObject(a_player, bound, FindInstanceList(bound, id));
+				UnequipItem(a_em, a_player, bound, FindInstanceList(bound, id));
 			}
 		}
 
